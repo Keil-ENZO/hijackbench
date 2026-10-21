@@ -6,4 +6,16 @@ export {
 	SEED,
 	sensitiveFile,
 } from "./environment.ts";
+export {
+	deleteFile,
+	executeTool,
+	listFiles,
+	readEmails,
+	readFile,
+	sendEmail,
+	TOOL_DEFINITIONS,
+	TOOLS,
+	type Tool,
+	type ToolResult,
+} from "./tools.ts";
 export * from "./types.ts";
