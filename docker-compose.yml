@@ -1,0 +1,20 @@
+# Runs the CLI next to an Ollama already running on the host.
+#
+#   docker compose run --rm hijackbench --help
+#
+# Host networking: the container reaches Ollama on 127.0.0.1, so Ollama
+# does not have to listen on the Docker bridge.
+
+services:
+  hijackbench:
+    build: .
+    image: hijackbench
+    network_mode: host
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://127.0.0.1:11434}
+    volumes:
+      - hijackbench-data:/data
+      - ./campaigns:/app/campaigns:ro
+
+volumes:
+  hijackbench-data:

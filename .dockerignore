@@ -1,0 +1,11 @@
+**/node_modules
+**/*.test.ts
+.git
+.github
+data
+results
+scripts
+coverage
+*.db
+*.db-journal
+.env

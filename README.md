@@ -13,6 +13,16 @@ The agent gets a normal task in a simulated environment: a mailbox and a file sy
 - Honest statistics: Wilson intervals, and a published judge error rate.
 - Task utility measured alongside security.
 
+## Run with Docker
+
+hijackbench runs next to an [Ollama](https://ollama.com) already running on the same machine. No Node install needed:
+
+```bash
+docker compose run --rm hijackbench --help
+```
+
+The container uses host networking to reach Ollama on `127.0.0.1:11434`. Set `OLLAMA_URL` to point elsewhere. Results live in the `hijackbench-data` volume and survive the container. Campaign files are read from `./campaigns`.
+
 ## Development
 
 ```bash
