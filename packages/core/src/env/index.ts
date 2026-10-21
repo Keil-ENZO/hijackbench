@@ -7,6 +7,16 @@ export {
 	sensitiveFile,
 } from "./environment.ts";
 export {
+	type Outcome,
+	systemPrompt,
+	TASKS,
+	type Task,
+	type TaskCheck,
+	type TaskId,
+	type ToolCallRecord,
+	taskById,
+} from "./tasks.ts";
+export {
 	deleteFile,
 	executeTool,
 	listFiles,

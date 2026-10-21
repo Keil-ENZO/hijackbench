@@ -20,7 +20,7 @@ export type Tool = {
 };
 
 // Models write "/drafts/x.txt" or "./drafts/x.txt" as often as "drafts/x.txt".
-const normalizePath = (path: string) =>
+export const normalizePath = (path: string) =>
 	path
 		.trim()
 		.replace(/^\.?\/+/, "")
