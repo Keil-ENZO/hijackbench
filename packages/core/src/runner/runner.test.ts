@@ -7,6 +7,7 @@ import { ProviderError } from "../providers/errors.ts";
 import { reply } from "../providers/fake.ts";
 import type { ChatResponse, Provider } from "../providers/types.ts";
 import { openStore, runKey, type Store } from "../store/store.ts";
+import { createThermalGuard, ThermalReadError } from "../thermal/thermal.ts";
 import {
 	CampaignMismatchError,
 	planCampaign,
@@ -363,5 +364,149 @@ describe("technical failures", () => {
 			}),
 		).rejects.toThrow(TypeError);
 		expect(store.listRuns("test")).toEqual([]);
+	});
+});
+
+describe("thermal guard", () => {
+	// A card whose temperature the test sets; reads during a pause drop it
+	// by 10 °C each time.
+	function card(initial: number) {
+		const state = { vram: initial, cooling: false };
+		const thermal = createThermalGuard({
+			thresholds: { pauseAt: 84, resumeAt: 60, abortAt: 90 },
+			read: () => {
+				if (state.vram === -1) throw new ThermalReadError("exporter down");
+				return state.vram;
+			},
+			sleep: async () => {
+				state.vram -= 10;
+			},
+		});
+		return { state, thermal };
+	}
+
+	// A provider that heats the card while it answers: the n-th call sets
+	// the temperature from `heat`, then waits for the abort or answers.
+	function heating(state: { vram: number }, heat: (n: number) => number) {
+		let calls = 0;
+		return (): Provider => ({
+			name: "heating",
+			model: "gemma",
+			chat: (_, { signal } = {}) => {
+				state.vram = heat(++calls);
+				if (state.vram < 90) return Promise.resolve(reply("done"));
+				return new Promise((_, reject) =>
+					signal?.addEventListener("abort", () =>
+						reject(new ProviderError("aborted", "aborted")),
+					),
+				);
+			},
+		});
+	}
+
+	const one = () =>
+		parseCampaign(`id: test
+name: Test
+models: [gemma]
+tasks: [T1]
+runs: 2
+`);
+
+	it("pauses before a run and records the pause", async () => {
+		const { state, thermal } = card(86);
+		const summary = await run(one(), undefined, { thermal });
+		expect(summary.done).toBe(2);
+		expect(store.listPauses("test")).toMatchObject([
+			{ kind: "pause", runKey: "gemma|T1|-|1", fromC: 86, toC: 56 },
+		]);
+		expect(events).toContainEqual(
+			expect.objectContaining({ type: "pause", kind: "pause", fromC: 86 }),
+		);
+		expect(state.vram).toBe(56);
+	});
+
+	it("cuts a run at abortAt, cools down, and runs it again", async () => {
+		const { state, thermal } = card(50);
+		const summary = await runCampaign({
+			config: one(),
+			store,
+			thermal,
+			thermalPollMs: 5,
+			// First call overheats, the others stay cool.
+			providerFor: heating(state, (n) => (n === 1 ? 91 : 70)),
+			onEvent: (e) => events.push(e),
+		});
+		expect(summary).toMatchObject({ done: 2, errors: 0 });
+		expect(summary.stopped).toBeUndefined();
+		expect(events).toContainEqual({
+			type: "cut",
+			run: expect.objectContaining({ repetition: 1 }),
+			vram: 91,
+		});
+		expect(store.listPauses("test")).toMatchObject([
+			{ kind: "cut", runKey: "gemma|T1|-|1", fromC: 91, toC: 51 },
+		]);
+		// The cut run was saved once, from its second try.
+		expect(store.listRuns("test").map((r) => r.key)).toEqual([
+			"gemma|T1|-|1",
+			"gemma|T1|-|2",
+		]);
+	});
+
+	it("stops the campaign when the same run is cut twice", async () => {
+		const { state, thermal } = card(50);
+		const summary = await runCampaign({
+			config: one(),
+			store,
+			thermal,
+			thermalPollMs: 5,
+			providerFor: heating(state, () => 92),
+		});
+		expect(summary.stopped).toMatch(
+			/VRAM reached 92 °C twice on gemma\|T1\|-\|1/,
+		);
+		expect(store.listRuns("test")).toEqual([]);
+	});
+
+	it("stops when the reading is lost in the middle of a run", async () => {
+		const { state, thermal } = card(50);
+		const summary = await runCampaign({
+			config: one(),
+			store,
+			thermal,
+			thermalPollMs: 5,
+			providerFor: heating(state, () => {
+				// The exporter dies; the hanging reply waits for the abort.
+				setTimeout(() => {
+					state.vram = -1;
+				}, 10);
+				return 95;
+			}),
+		});
+		expect(summary.stopped).toBe("lost the VRAM reading: exporter down");
+		expect(store.listRuns("test")).toEqual([]);
+	});
+
+	it("refuses to start without a reading", async () => {
+		const { thermal } = card(-1);
+		await expect(run(one(), undefined, { thermal })).rejects.toThrow(
+			/Cannot read the VRAM temperature.*thermal.enabled: false/,
+		);
+		expect(store.getCampaign("test")).toBeUndefined();
+	});
+
+	it("lets stop end a pause", async () => {
+		const controller = new AbortController();
+		const thermal = createThermalGuard({
+			thresholds: { pauseAt: 84, resumeAt: 60, abortAt: 90 },
+			read: () => 88,
+			pollMs: 60_000,
+		});
+		setTimeout(() => controller.abort(new Error("stop during pause")), 10);
+		const summary = await run(one(), undefined, {
+			thermal,
+			signal: controller.signal,
+		});
+		expect(summary).toMatchObject({ done: 0, stopped: "stop during pause" });
 	});
 });

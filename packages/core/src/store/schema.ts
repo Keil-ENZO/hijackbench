@@ -126,3 +126,31 @@ export const control = sqliteTable("control", {
 	value: text("value").notNull(),
 	updatedAt: text("updated_at").notNull(),
 });
+
+// Thermal pauses and cuts, with their temperatures: the report shows how
+// much of a campaign the card spent cooling down.
+export const PAUSE_KINDS = ["pause", "cut"] as const;
+export type PauseKind = (typeof PAUSE_KINDS)[number];
+
+export const pauses = sqliteTable(
+	"pauses",
+	{
+		id: integer("id").primaryKey({ autoIncrement: true }),
+		campaignId: text("campaign_id")
+			.notNull()
+			.references(() => campaigns.id, { onDelete: "cascade" }),
+		// pause: before a run, the card was at pauseAt or more.
+		// cut: a run was aborted at abortAt, then the card cooled down.
+		kind: text("kind", { enum: PAUSE_KINDS }).notNull(),
+		// The run waiting, as its key in the plan.
+		runKey: text("run_key").notNull(),
+		startedAt: text("started_at").notNull(),
+		durationMs: integer("duration_ms").notNull(),
+		fromC: integer("from_c").notNull(),
+		toC: integer("to_c").notNull(),
+	},
+	(t) => [
+		index("pauses_campaign").on(t.campaignId),
+		check("pauses_kind", oneOf("kind", PAUSE_KINDS)),
+	],
+);

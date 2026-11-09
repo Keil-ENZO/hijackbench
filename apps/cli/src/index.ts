@@ -7,9 +7,12 @@ import {
 	CampaignConfigSchema,
 	CampaignMismatchError,
 	createOllamaProvider,
+	createThermalGuard,
+	DEFAULT_VRAM_FILE,
 	loadCampaign,
 	openStore,
 	type RunnerEvent,
+	readVram,
 	runCampaign,
 	VERSION,
 } from "@hijackbench/core";
@@ -45,6 +48,16 @@ function print(event: RunnerEvent) {
 		case "retry":
 			console.log(`  retry ${event.attempt}: ${event.error.slice(0, 200)}`);
 			break;
+		case "cut":
+			console.log(
+				`  CUT: VRAM at ${event.vram} °C, run dropped, cooling down before running it again`,
+			);
+			break;
+		case "pause":
+			console.log(
+				`  ${event.kind === "cut" ? "cooled after cut" : "paused"}: ${event.fromC} → ${event.toC} °C in ${Math.round(event.durationMs / 1000)} s`,
+			);
+			break;
 		case "stop":
 			console.log(`\nStopped: ${event.reason}. Resume with the same id.`);
 			break;
@@ -64,11 +77,28 @@ async function execute(config: CampaignConfig) {
 	const onSignal = () => controller.abort(new Error("interrupted"));
 	process.once("SIGINT", onSignal);
 	process.once("SIGTERM", onSignal);
+	// The VRAM file is a machine setting, not part of the campaign.
+	const vramFile = process.env.HIJACKBENCH_VRAM_FILE ?? DEFAULT_VRAM_FILE;
+	let lastWait = 0;
+	const thermal = config.thermal.enabled
+		? createThermalGuard({
+				thresholds: config.thermal,
+				read: () => readVram(vramFile),
+				// One line a minute while the card cools down.
+				onWait: (vram) => {
+					if (Date.now() - lastWait < 60_000) return;
+					lastWait = Date.now();
+					console.log(
+						`  waiting: VRAM at ${vram} °C, resumes at ${config.thermal.resumeAt} °C`,
+					);
+				},
+			})
+		: undefined;
 	try {
-		console.warn(
-			"Warning: no automatic thermal pause yet (US-16). Watch the GDDR6X.",
-		);
+		if (!thermal)
+			console.warn("Warning: thermal guard disabled by the campaign config.");
 		const summary = await runCampaign({
+			...(thermal && { thermal }),
 			config,
 			store,
 			signal: controller.signal,

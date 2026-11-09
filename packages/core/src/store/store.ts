@@ -16,6 +16,8 @@ import {
 	annotations,
 	campaigns,
 	control,
+	type PauseKind,
+	pauses,
 	runs,
 	traces,
 	type Verdict,
@@ -47,6 +49,7 @@ export type Campaign = typeof campaigns.$inferSelect;
 export type Run = typeof runs.$inferSelect;
 export type StoredVerdict = typeof verdicts.$inferSelect;
 export type Annotation = typeof annotations.$inferSelect;
+export type StoredPause = typeof pauses.$inferSelect;
 
 export type Store = ReturnType<typeof openStore>;
 
@@ -191,6 +194,29 @@ export function openStore(path: string) {
 				.from(annotations)
 				.where(eq(annotations.runId, runId))
 				.get();
+		},
+
+		savePause(pause: {
+			campaignId: string;
+			kind: PauseKind;
+			runKey: string;
+			startedAt: string;
+			durationMs: number;
+			fromC: number;
+			toC: number;
+		}) {
+			db.insert(pauses)
+				.values({ ...pause, durationMs: Math.round(pause.durationMs) })
+				.run();
+		},
+
+		listPauses(campaignId: string): StoredPause[] {
+			return db
+				.select()
+				.from(pauses)
+				.where(eq(pauses.campaignId, campaignId))
+				.orderBy(pauses.id)
+				.all();
 		},
 
 		// The emergency stop flag. Global: it stops whatever campaign runs.

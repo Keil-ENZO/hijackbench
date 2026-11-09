@@ -15,6 +15,10 @@ services:
     volumes:
       - hijackbench-data:/data
       - ./campaigns:/app/campaigns:ro
+      # The GDDR6X temperature written by gputemps-exporter on the host.
+      # The directory, not the file: the exporter replaces the file on each
+      # write, and a file mount would keep showing the old one.
+      - /var/lib/node_exporter/textfile:/var/lib/node_exporter/textfile:ro
 
 volumes:
   hijackbench-data:

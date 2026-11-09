@@ -95,6 +95,8 @@ export const CampaignConfigSchema = strict({
 	}).prefault({}),
 	// GDDR6X thresholds in °C, from the J0 measure.
 	thermal: strict({
+		// false only on a machine without the 3090, e.g. to try a campaign.
+		enabled: z.boolean({ error: "must be true or false" }).default(true),
 		pauseAt: z.number().default(84),
 		resumeAt: z.number().default(60),
 		abortAt: z.number().default(90),

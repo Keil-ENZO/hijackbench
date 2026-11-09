@@ -11,10 +11,11 @@ import { runAgent } from "../agent/loop.ts";
 import type { CampaignConfig } from "../config/campaign.ts";
 import { generateCanary } from "../env/canary.ts";
 import { createEnvironment } from "../env/environment.ts";
-import { type TaskId, taskById } from "../env/tasks.ts";
+import { type Task, type TaskId, taskById } from "../env/tasks.ts";
 import { isProviderError, ProviderError } from "../providers/errors.ts";
 import type { Provider } from "../providers/types.ts";
 import { type RunCoordinates, runKey, type Store } from "../store/store.ts";
+import { type ThermalGuard, ThermalReadError } from "../thermal/thermal.ts";
 
 // The order matters when a campaign is cut: model by model, so that each
 // model loads once, then repetition by repetition, so that every case has
@@ -45,6 +46,15 @@ export type RunnerEvent =
 			durationMs: number;
 	  }
 	| { type: "retry"; run: RunCoordinates; attempt: number; error: string }
+	| { type: "cut"; run: RunCoordinates; vram: number }
+	| {
+			type: "pause";
+			run: RunCoordinates;
+			kind: "pause" | "cut";
+			durationMs: number;
+			fromC: number;
+			toC: number;
+	  }
 	| { type: "stop"; reason: string }
 	| { type: "end"; summary: RunnerSummary };
 
@@ -76,11 +86,18 @@ export type RunCampaignOptions = {
 	now?: () => number;
 	// How often the stop flag is read, in the middle of a run too.
 	stopPollMs?: number;
+	// The GDDR6X guard. Absent when the config disables it.
+	thermal?: ThermalGuard;
+	// How often the VRAM is read during a run, to cut it at abortAt.
+	thermalPollMs?: number;
 };
 
 const DEFAULT_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_STOP_POLL_MS = 1_000;
+const DEFAULT_THERMAL_POLL_MS = 2_000;
+// A run cut twice in a row means the card cannot hold this model.
+const MAX_CUTS_PER_RUN = 2;
 
 export class CampaignMismatchError extends Error {
 	override readonly name = "CampaignMismatchError";
@@ -116,6 +133,18 @@ export async function runCampaign(
 			"Attacked runs need the attack catalog (US-20). Run reference tasks only for now.",
 		);
 
+	const { thermal } = options;
+	if (thermal) {
+		try {
+			thermal.read();
+		} catch (error) {
+			throw new Error(
+				`Cannot read the VRAM temperature, so the card cannot be protected: ${(error as Error).message}. ` +
+					"Fix the exporter, or set thermal.enabled: false on a machine without the 3090.",
+			);
+		}
+	}
+
 	ensureCampaign(store, config);
 	// A stop left over from the last campaign must not stop this one.
 	store.clearStop();
@@ -149,6 +178,17 @@ export async function runCampaign(
 			stopController.abort(new Error(flag.reason));
 	}, options.stopPollMs ?? DEFAULT_STOP_POLL_MS);
 
+	const context = {
+		config,
+		store,
+		retries,
+		retryDelayMs,
+		sleep,
+		now,
+		onRetry: (run: RunCoordinates, attempt: number, error: string) =>
+			emit({ type: "retry", run, attempt, error }),
+	};
+
 	let provider: Provider | undefined;
 	try {
 		for (const [index, run] of todo.entries()) {
@@ -165,72 +205,58 @@ export async function runCampaign(
 				emit({ type: "model", model: run.model });
 			}
 
-			await options.beforeRun?.(run, signal);
-
 			const task = taskById(run.taskId as TaskId);
-			const start = now();
-			let attempt = 0;
-			for (;;) {
-				const env = createEnvironment({ canary: generateCanary() });
+			const position = {
+				index: summary.skipped + index + 1,
+				remaining: todo.length - index - 1,
+			};
+			// One pass per try of this run: a thermal cut sends it back here,
+			// to cool down and run it again from scratch.
+			for (let cuts = 0; ; ) {
+				if (thermal) {
+					const kind = cuts > 0 ? "cut" : "pause";
+					const pause = await coolDown(thermal, signal, cuts > 0);
+					if (pause) {
+						store.savePause({
+							campaignId: config.id,
+							kind,
+							runKey: runKey(run),
+							...pause,
+						});
+						emit({ type: "pause", run, kind, ...pause });
+					}
+				}
+				await options.beforeRun?.(run, signal);
+
+				const heat = watchHeat(thermal, options.thermalPollMs);
 				try {
-					const { trace, outcome } = await runAgent({
+					const result = await attempt({
+						...context,
 						provider,
-						task,
-						env,
-						temperature: config.agent.temperature,
-						maxTurns: config.agent.maxTurns,
-						...(config.agent.maxTokens && {
-							maxTokens: config.agent.maxTokens,
-						}),
-						signal,
-					});
-					store.saveRun({ campaignId: config.id, ...run, trace });
-					summary.done++;
-					emit({
-						type: "run",
 						run,
-						index: summary.skipped + index + 1,
-						remaining: todo.length - index - 1,
-						status: "done",
-						taskSuccess: task.check(outcome).success,
-						durationMs: trace.durationMs,
+						task,
+						signal: heat ? AbortSignal.any([signal, heat.signal]) : signal,
 					});
+					if (result.status === "done") summary.done++;
+					else summary.errors++;
+					emit({ type: "run", run, ...position, ...result });
 					break;
 				} catch (error) {
-					if (!isProviderError(error)) throw error;
-					const blame = blameOf(error);
-					if (blame === "abort") throw error;
-					if (blame === "campaign") throw new StopCampaign(error);
-					if (attempt < retries) {
-						attempt++;
-						emit({
-							type: "retry",
-							run,
-							attempt,
-							error: describe(error),
-						});
-						await sleep(retryDelayMs * attempt, signal);
-						continue;
-					}
-					// Ollama still down after the retries: no run can succeed.
-					if (blame === "service") throw new StopCampaign(error);
-					const durationMs = now() - start;
-					store.saveRun({
-						campaignId: config.id,
-						...run,
-						error: describe(error),
-						durationMs,
-					});
-					summary.errors++;
-					emit({
-						type: "run",
-						run,
-						index: summary.skipped + index + 1,
-						remaining: todo.length - index - 1,
-						status: "error",
-						durationMs,
-					});
-					break;
+					// The run signal aborts on a stop or on heat: the cause
+					// tells them apart.
+					const cause = heat?.signal.reason;
+					if (!heat?.signal.aborted || signal.aborted) throw error;
+					if (cause instanceof ThermalReadError)
+						throw new StopCampaign(`lost the VRAM reading: ${cause.message}`);
+					if (!(cause instanceof ThermalCut)) throw error;
+					cuts++;
+					emit({ type: "cut", run, vram: cause.vram });
+					if (cuts >= MAX_CUTS_PER_RUN)
+						throw new StopCampaign(
+							`VRAM reached ${cause.vram} °C twice on ${runKey(run)}: the card cannot hold this model as set up`,
+						);
+				} finally {
+					heat?.stop();
 				}
 			}
 		}
@@ -250,6 +276,92 @@ export async function runCampaign(
 
 	emit({ type: "end", summary });
 	return summary;
+}
+
+type AttemptContext = {
+	config: CampaignConfig;
+	store: Store;
+	retries: number;
+	retryDelayMs: number;
+	sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+	now: () => number;
+	onRetry: (run: RunCoordinates, attempt: number, error: string) => void;
+	provider: Provider;
+	run: RunCoordinates;
+	task: Task;
+	signal: AbortSignal;
+};
+
+// Runs one planned run until it is saved, as done or as a technical error,
+// retrying what can be retried. Throws to stop: an abort, or a failure that
+// no retry can fix.
+async function attempt(ctx: AttemptContext): Promise<{
+	status: "done" | "error";
+	durationMs: number;
+	taskSuccess?: boolean;
+}> {
+	const { config, store, provider, run, task, signal } = ctx;
+	const start = ctx.now();
+	for (let tries = 0; ; tries++) {
+		const env = createEnvironment({ canary: generateCanary() });
+		try {
+			const { trace, outcome } = await runAgent({
+				provider,
+				task,
+				env,
+				temperature: config.agent.temperature,
+				maxTurns: config.agent.maxTurns,
+				...(config.agent.maxTokens && { maxTokens: config.agent.maxTokens }),
+				signal,
+			});
+			store.saveRun({ campaignId: config.id, ...run, trace });
+			return {
+				status: "done",
+				durationMs: trace.durationMs,
+				taskSuccess: task.check(outcome).success,
+			};
+		} catch (error) {
+			if (!isProviderError(error)) throw error;
+			const blame = blameOf(error);
+			if (blame === "abort") throw error;
+			if (blame === "campaign") throw new StopCampaign(error);
+			if (tries < ctx.retries) {
+				ctx.onRetry(run, tries + 1, describe(error));
+				await ctx.sleep(ctx.retryDelayMs * (tries + 1), signal);
+				continue;
+			}
+			// Ollama still down after the retries: no run can succeed.
+			if (blame === "service") throw new StopCampaign(error);
+			const durationMs = ctx.now() - start;
+			store.saveRun({
+				campaignId: config.id,
+				...run,
+				error: describe(error),
+				durationMs,
+			});
+			return { status: "error", durationMs };
+		}
+	}
+}
+
+// Reads the VRAM during a run and aborts at abortAt, or when the reading
+// is lost. Undefined when there is no thermal guard.
+function watchHeat(thermal: ThermalGuard | undefined, pollMs?: number) {
+	if (!thermal) return undefined;
+	const controller = new AbortController();
+	const timer = setInterval(() => {
+		try {
+			const vram = thermal.read();
+			if (vram >= thermal.thresholds.abortAt)
+				controller.abort(new ThermalCut(vram));
+		} catch (error) {
+			controller.abort(error);
+		}
+	}, pollMs ?? DEFAULT_THERMAL_POLL_MS);
+	return {
+		signal: controller.signal,
+		stop: () => clearInterval(timer),
+	};
 }
 
 function stopReason(store: Store, signal: AbortSignal | undefined) {
@@ -289,8 +401,34 @@ function blameOf(error: ProviderError): Blame {
 }
 
 class StopCampaign extends Error {
-	constructor(cause: ProviderError) {
-		super(describe(cause), { cause });
+	constructor(cause: ProviderError | string) {
+		super(typeof cause === "string" ? cause : describe(cause), { cause });
+	}
+}
+
+// The reason of a heat abort, with the temperature that triggered it.
+class ThermalCut extends Error {
+	readonly vram: number;
+	constructor(vram: number) {
+		super(`VRAM at ${vram} °C`);
+		this.vram = vram;
+	}
+}
+
+// Waits for the card to cool down. A stop during the wait is an abort,
+// a lost reading stops the campaign.
+async function coolDown(
+	thermal: ThermalGuard,
+	signal: AbortSignal,
+	force: boolean,
+) {
+	try {
+		return await thermal.coolDown(signal, { force });
+	} catch (error) {
+		if (signal.aborted) throw abortError(signal);
+		if (error instanceof ThermalReadError)
+			throw new StopCampaign(`lost the VRAM reading: ${error.message}`);
+		throw error;
 	}
 }
 

@@ -38,7 +38,7 @@ describe("parseCampaign", () => {
 			runs: 20,
 			agent: { temperature: 0.7, maxTurns: 10 },
 			ollama: { baseUrl: "http://localhost:11434", timeoutMs: 120_000 },
-			thermal: { pauseAt: 84, resumeAt: 60, abortAt: 90 },
+			thermal: { enabled: true, pauseAt: 84, resumeAt: 60, abortAt: 90 },
 		} satisfies CampaignConfig);
 	});
 

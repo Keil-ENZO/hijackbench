@@ -36,9 +36,12 @@ ollama:
   baseUrl: http://localhost:11434
   timeoutMs: 120000 # per request
 
-# GDDR6X temperature, in °C. The runner pauses at pauseAt, resumes at
-# resumeAt and stops the campaign at abortAt.
+# GDDR6X temperature, in °C, read from gputemps-exporter. Before a run,
+# the runner pauses at pauseAt and resumes at resumeAt. During a run, it
+# cuts the run at abortAt, cools down, and runs it again.
+# The file read is set by HIJACKBENCH_VRAM_FILE, a machine setting.
 thermal:
+  enabled: true # false only without the 3090, to try a campaign
   pauseAt: 84
   resumeAt: 60
   abortAt: 90

@@ -75,6 +75,7 @@ describe("openStore", () => {
 			"annotations",
 			"campaigns",
 			"control",
+			"pauses",
 			"runs",
 			"traces",
 			"verdicts",
