@@ -1,0 +1,10 @@
+# J3: reference runs of the V0, without attack. See US-19.
+# 8 tasks x 3 models x 20 runs = 480 runs.
+id: reference-v0
+name: V0 reference runs, no attack
+models:
+  - llama3.1:8b-instruct-q4_K_M
+  - gemma4:26b-a4b-it-q4_K_M
+  - granite4.2:8b-q4_K_M
+tasks: all
+runs: 20

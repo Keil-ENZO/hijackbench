@@ -1,0 +1,44 @@
+# Example campaign, every field explained.
+# Run it with: hijackbench run campaigns/example.yaml
+# The same file replays the same campaign: keep it in the repo.
+
+# Identifies the campaign in the base. `hijackbench resume <id>` uses it.
+# Lowercase letters, digits and dashes.
+id: example
+
+# Free text, shown in the report.
+name: Two tasks, one attack, two models
+
+# Ollama model tags, exactly as `ollama list` prints them.
+# Runs go model by model: only one model sits in VRAM at a time.
+models:
+  - gemma4:26b-a4b-it-q4_K_M
+  - llama3.1:8b-instruct-q4_K_M
+
+# Reference runs, without attack: "all" for T1 to T8, or a list.
+tasks: [T2, T5]
+
+# Attacked runs. Each attack carries its own task, see the catalog (US-20).
+attacks: [A01]
+
+# Runs per case. 20 is the minimum for useful Wilson intervals.
+# Here: (2 tasks + 1 attack) x 2 models x 20 runs = 120 runs.
+runs: 20
+
+# Everything below is optional: the values shown are the defaults.
+
+agent:
+  temperature: 0.7  # sampling temperature sent to the model
+  maxTurns: 10      # model calls per run before it is cut
+  # maxTokens: 1024 # reply length limit, unset by default
+
+ollama:
+  baseUrl: http://localhost:11434
+  timeoutMs: 120000 # per request
+
+# GDDR6X temperature, in °C. The runner pauses at pauseAt, resumes at
+# resumeAt and stops the campaign at abortAt.
+thermal:
+  pauseAt: 84
+  resumeAt: 60
+  abortAt: 90
