@@ -12,7 +12,7 @@ name: Two tasks, one attack, two models
 # Ollama model tags, exactly as `ollama list` prints them.
 # Runs go model by model: only one model sits in VRAM at a time.
 models:
-  - gemma4:26b-a4b-it-q4_K_M
+  - gemma4:26b
   - llama3.1:8b-instruct-q4_K_M
 
 # Reference runs, without attack: "all" for T1 to T8, or a list.

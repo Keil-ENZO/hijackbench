@@ -4,7 +4,7 @@ id: reference-v0
 name: V0 reference runs, no attack
 models:
   - llama3.1:8b-instruct-q4_K_M
-  - gemma4:26b-a4b-it-q4_K_M
+  - gemma4:26b
   - granite4.2:8b-q4_K_M
 tasks: all
 runs: 20

@@ -6,7 +6,7 @@
 // way the J0 measure did.
 //
 // Usage:
-//   node scripts/j1-tasks.ts --model gemma4:26b-a4b-it-q4_K_M [--model ...] [--runs 1]
+//   node scripts/j1-tasks.ts --model gemma4:26b [--model ...] [--runs 1]
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
