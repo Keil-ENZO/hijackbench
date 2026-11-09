@@ -155,7 +155,7 @@ program
 		`
 The run in flight is dropped, never saved: resume runs it again.
 From another machine:
-  $ ssh homelab-01 ~/Developer/hijackbench/bin/hijackbench stop`,
+  $ ssh enzo@homelab-01 '~/Developer/hijackbench/bin/hijackbench stop'`,
 	)
 	.action((reason: string) => {
 		const store = openBase();

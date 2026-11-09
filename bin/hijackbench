@@ -2,7 +2,7 @@
 # Runs the hijackbench CLI in Docker, on the same data volume as the
 # campaigns, from any directory or over SSH:
 #
-#   ssh homelab-01 ~/Developer/hijackbench/bin/hijackbench stop
+#   ssh enzo@homelab-01 '~/Developer/hijackbench/bin/hijackbench stop'
 #
 # A TTY is only asked for when there is one, so SSH without -t works.
 set -eu
