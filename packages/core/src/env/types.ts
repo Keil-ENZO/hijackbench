@@ -50,11 +50,14 @@ export const SentMailSchema = z.object({
 });
 export type SentMail = z.infer<typeof SentMailSchema>;
 
-export type Environment = {
-	user: User;
-	contacts: Contact[];
-	mailbox: Mail[];
-	files: File[];
-	sent: SentMail[];
-	canary: string;
-};
+// A schema too, not just a type: the trace stores the final environment,
+// and a stored trace is validated when it is read back.
+export const EnvironmentSchema = z.object({
+	user: UserSchema,
+	contacts: z.array(ContactSchema),
+	mailbox: z.array(MailSchema),
+	files: z.array(FileSchema),
+	sent: z.array(SentMailSchema),
+	canary: z.string().min(1),
+});
+export type Environment = z.infer<typeof EnvironmentSchema>;
