@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type CampaignConfig, parseCampaign } from "../config/campaign.ts";
 import { ProviderError } from "../providers/errors.ts";
@@ -198,6 +201,65 @@ describe("stop flag", () => {
 		});
 		expect(summary).toMatchObject({ done: 3, stopped: "VRAM at 94 °C" });
 		expect(events).toContainEqual({ type: "stop", reason: "VRAM at 94 °C" });
+	});
+
+	it("cuts the request in flight when stop is called from another process", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hijackbench-stop-"));
+		const file = join(dir, "test.db");
+		const runner = openStore(file);
+		const other = openStore(file);
+		try {
+			let requests = 0;
+			// The second request hangs, like a model stuck on a long reply,
+			// until the runner aborts it.
+			const hanging: Provider = {
+				name: "hanging",
+				model: "gemma",
+				chat: (_, { signal } = {}) =>
+					++requests === 1
+						? Promise.resolve(reply("done"))
+						: new Promise((_, reject) => {
+								setTimeout(() => other.requestStop("VRAM alert"), 20);
+								signal?.addEventListener("abort", () =>
+									reject(new ProviderError("aborted", "aborted")),
+								);
+							}),
+				unload: async () => {
+					log.push("unload gemma");
+				},
+			};
+			const started = performance.now();
+			const summary = await runCampaign({
+				config: config(),
+				store: runner,
+				providerFor: () => hanging,
+				stopPollMs: 10,
+			});
+			expect(performance.now() - started).toBeLessThan(1000);
+			expect(summary).toMatchObject({ done: 1, stopped: "VRAM alert" });
+			// The cut run is not saved, and the model left the VRAM.
+			expect(runner.listRuns("test")).toHaveLength(1);
+			expect(log).toEqual(["unload gemma"]);
+		} finally {
+			runner.close();
+			other.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("gives the stop signal to the hook before each run", async () => {
+		const summary = await run(config(), undefined, {
+			stopPollMs: 5,
+			// A thermal pause that waits until stopped.
+			beforeRun: (_, signal) =>
+				new Promise((_, reject) => {
+					setTimeout(() => store.requestStop("stop during pause"), 10);
+					signal.addEventListener("abort", () =>
+						reject(new ProviderError("aborted", "aborted")),
+					);
+				}),
+		});
+		expect(summary).toMatchObject({ done: 0, stopped: "stop during pause" });
 	});
 
 	it("clears a stale flag when a campaign starts", async () => {

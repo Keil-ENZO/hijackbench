@@ -64,8 +64,9 @@ export type RunCampaignOptions = {
 	providerFor: (model: string) => Provider;
 	// Aborts the run in flight. The run is not saved.
 	signal?: AbortSignal;
-	// Called before each run. The thermal pause of US-16 waits here.
-	beforeRun?: (run: RunCoordinates) => Promise<void>;
+	// Called before each run. The thermal pause of US-16 waits here, and
+	// gives up when the signal aborts.
+	beforeRun?: (run: RunCoordinates, signal: AbortSignal) => Promise<void>;
 	onEvent?: (event: RunnerEvent) => void;
 	// New tries after a technical failure, before the run is saved as an
 	// error. A model that is down fails fast, a slow reply gets a second go.
@@ -73,10 +74,13 @@ export type RunCampaignOptions = {
 	retryDelayMs?: number;
 	sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 	now?: () => number;
+	// How often the stop flag is read, in the middle of a run too.
+	stopPollMs?: number;
 };
 
 const DEFAULT_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 5_000;
+const DEFAULT_STOP_POLL_MS = 1_000;
 
 export class CampaignMismatchError extends Error {
 	override readonly name = "CampaignMismatchError";
@@ -100,7 +104,7 @@ export function ensureCampaign(store: Store, config: CampaignConfig) {
 export async function runCampaign(
 	options: RunCampaignOptions,
 ): Promise<RunnerSummary> {
-	const { config, store, signal } = options;
+	const { config, store } = options;
 	const emit = options.onEvent ?? (() => {});
 	const retries = options.retries ?? DEFAULT_RETRIES;
 	const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
@@ -132,6 +136,19 @@ export async function runCampaign(
 		skipped: summary.skipped,
 	});
 
+	// The emergency stop: `hijackbench stop` sets the flag from another
+	// process, the watch turns it into an abort within a poll interval,
+	// even while a request is in flight.
+	const stopController = new AbortController();
+	const signal = options.signal
+		? AbortSignal.any([options.signal, stopController.signal])
+		: stopController.signal;
+	const watch = setInterval(() => {
+		const flag = store.stopRequested();
+		if (flag && !stopController.signal.aborted)
+			stopController.abort(new Error(flag.reason));
+	}, options.stopPollMs ?? DEFAULT_STOP_POLL_MS);
+
 	let provider: Provider | undefined;
 	try {
 		for (const [index, run] of todo.entries()) {
@@ -148,7 +165,7 @@ export async function runCampaign(
 				emit({ type: "model", model: run.model });
 			}
 
-			await options.beforeRun?.(run);
+			await options.beforeRun?.(run, signal);
 
 			const task = taskById(run.taskId as TaskId);
 			const start = now();
@@ -165,7 +182,7 @@ export async function runCampaign(
 						...(config.agent.maxTokens && {
 							maxTokens: config.agent.maxTokens,
 						}),
-						...(signal && { signal }),
+						signal,
 					});
 					store.saveRun({ campaignId: config.id, ...run, trace });
 					summary.done++;
@@ -226,6 +243,8 @@ export async function runCampaign(
 		else throw error;
 		emit({ type: "stop", reason: summary.stopped });
 	} finally {
+		clearInterval(watch);
+		// The model leaves the VRAM whatever happened: end, stop or crash.
 		await provider?.unload?.().catch(() => {});
 	}
 

@@ -140,12 +140,42 @@ program
 		await execute(CampaignConfigSchema.parse(campaign.config)).catch(fail);
 	});
 
+program
+	.command("stop")
+	.description(
+		"Emergency stop: cut the run in flight and unload the model, within seconds",
+	)
+	.argument(
+		"[reason]",
+		"kept in the log of the stopped campaign",
+		"stop command",
+	)
+	.addHelpText(
+		"after",
+		`
+The run in flight is dropped, never saved: resume runs it again.
+From another machine:
+  $ ssh homelab-01 ~/Developer/hijackbench/bin/hijackbench stop`,
+	)
+	.action((reason: string) => {
+		const store = openBase();
+		try {
+			store.requestStop(reason);
+		} finally {
+			store.close();
+		}
+		console.log(
+			"Stop requested. A running campaign stops within a few seconds and unloads its model.",
+		);
+	});
+
 program.addHelpText(
 	"after",
 	`
 Examples:
   $ hijackbench run campaigns/reference-v0.yaml
-  $ hijackbench resume reference-v0`,
+  $ hijackbench resume reference-v0
+  $ hijackbench stop "VRAM at 94 °C"`,
 );
 
 await program.parseAsync();
