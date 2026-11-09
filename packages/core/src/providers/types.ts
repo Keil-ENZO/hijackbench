@@ -77,4 +77,7 @@ export interface Provider {
 	readonly name: string;
 	readonly model: string;
 	chat(request: ChatRequest, options?: ChatOptions): Promise<ChatResponse>;
+	// Frees the model's memory, for local providers. One model in VRAM at
+	// a time: the runner unloads each model before loading the next.
+	unload?(): Promise<void>;
 }

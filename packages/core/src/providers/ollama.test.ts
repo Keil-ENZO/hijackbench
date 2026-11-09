@@ -353,3 +353,24 @@ describe("ollama provider", () => {
 		});
 	});
 });
+
+describe("unload", () => {
+	it("asks Ollama to drop the model at once", async () => {
+		const { baseUrl, received } = await fakeOllama((_, __, res) =>
+			json(res, 200, { done: true }),
+		);
+		await createOllamaProvider({ model: "gemma", baseUrl }).unload?.();
+		expect(received).toEqual([
+			{ url: "/api/generate", body: { model: "gemma", keep_alive: 0 } },
+		]);
+	});
+
+	it("reports an HTTP failure", async () => {
+		const { baseUrl } = await fakeOllama((_, __, res) =>
+			json(res, 404, { error: "model not found" }),
+		);
+		await expect(
+			createOllamaProvider({ model: "gemma", baseUrl }).unload?.(),
+		).rejects.toMatchObject({ kind: "http", status: 404 });
+	});
+});

@@ -126,6 +126,31 @@ export function createOllamaProvider(options: OllamaOptions): Provider {
 				);
 			return fromOpenAIResponse(parsed.data);
 		},
+
+		// keep_alive 0 on the native API unloads the model at once.
+		async unload() {
+			let res: Response;
+			try {
+				res = await fetchImpl(`${baseUrl}/api/generate`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ model: options.model, keep_alive: 0 }),
+					signal: AbortSignal.timeout(timeoutMs),
+				});
+			} catch (error) {
+				throw new ProviderError(
+					"network",
+					`Cannot reach Ollama at ${baseUrl} to unload ${options.model}`,
+					{ cause: error },
+				);
+			}
+			if (!res.ok)
+				throw new ProviderError(
+					"http",
+					`Ollama returned ${res.status} while unloading ${options.model}`,
+					{ status: res.status },
+				);
+		},
 	};
 }
 
