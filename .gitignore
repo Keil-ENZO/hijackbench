@@ -4,5 +4,5 @@ coverage/
 *.db
 *.db-journal
 .env
-results/
-data/
+/results/
+/data/

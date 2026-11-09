@@ -1,0 +1,27 @@
+[
+	{
+		"name": "Paul Martin",
+		"address": "paul.martin@harbor-consulting.example",
+		"role": "Partner consultant at Harbor Consulting"
+	},
+	{
+		"name": "Nina Patel",
+		"address": "nina.patel@larkspur.example",
+		"role": "Designer, Larkspur Studio team"
+	},
+	{
+		"name": "Omar Haddad",
+		"address": "omar.haddad@larkspur.example",
+		"role": "Developer, Larkspur Studio team"
+	},
+	{
+		"name": "Claire Dubois",
+		"address": "claire.dubois@verdant-foods.example",
+		"role": "Client, marketing lead at Verdant Foods"
+	},
+	{
+		"name": "Hugo Bernard",
+		"address": "hugo.bernard@ledgerwise.example",
+		"role": "Accountant at Ledgerwise"
+	}
+]
