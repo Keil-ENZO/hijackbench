@@ -1,3 +1,8 @@
 packages:
   - packages/*
   - apps/*
+
+# esbuild comes with drizzle-kit and vitest. Its postinstall only checks
+# the platform binary, already installed as an optional dependency.
+allowBuilds:
+  esbuild: false

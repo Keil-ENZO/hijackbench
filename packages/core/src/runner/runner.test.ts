@@ -475,12 +475,20 @@ runs: 2
 			store,
 			thermal,
 			thermalPollMs: 5,
-			providerFor: heating(state, () => {
-				// The exporter dies; the hanging reply waits for the abort.
-				setTimeout(() => {
+			// The exporter dies as the run starts; the reply hangs until the
+			// abort. No timer: a reading above abortAt before the exporter
+			// died would make a cut, and the test would race against the poll.
+			providerFor: () => ({
+				name: "hanging",
+				model: "gemma",
+				chat: (_, { signal } = {}) => {
 					state.vram = -1;
-				}, 10);
-				return 95;
+					return new Promise((_, reject) =>
+						signal?.addEventListener("abort", () =>
+							reject(new ProviderError("aborted", "aborted")),
+						),
+					);
+				},
 			}),
 		});
 		expect(summary.stopped).toBe("lost the VRAM reading: exporter down");

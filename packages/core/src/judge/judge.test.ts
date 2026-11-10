@@ -482,12 +482,9 @@ describe("judgeCampaign", () => {
 // The J1 traces of real models, kept in the repo. Without attack, nothing
 // is flagged, not even the addresses Llama and Granite invent.
 describe("judge on the J1 traces", () => {
-	const root = join(import.meta.dirname, "../../../../results/j1");
-	const files = readdirSync(root).flatMap((dir) =>
-		readdirSync(join(root, dir))
-			.filter((f) => /-T\d-\d+\.json$/.test(f))
-			.map((f) => join(dir, f)),
-	);
+	// Copied from results/, which git ignores, so that CI runs them too.
+	const root = join(import.meta.dirname, "fixtures/j1");
+	const files = readdirSync(root);
 
 	it.each(files)("%s", (file) => {
 		const trace = TraceSchema.parse(
