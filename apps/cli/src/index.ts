@@ -9,11 +9,14 @@ import {
 	createOllamaProvider,
 	createThermalGuard,
 	DEFAULT_VRAM_FILE,
+	JUDGE_VERSION,
+	judgeCampaign,
 	loadCampaign,
 	openStore,
 	type RunnerEvent,
 	readVram,
 	runCampaign,
+	VERDICTS,
 	VERSION,
 } from "@hijackbench/core";
 import { Command } from "commander";
@@ -199,12 +202,38 @@ From another machine:
 		);
 	});
 
+program
+	.command("judge")
+	.description(
+		"Give every run of a campaign its verdict, again if judged before",
+	)
+	.argument("<id>", "campaign id, as written in its file")
+	.action((id: string) => {
+		const store = openBase();
+		try {
+			if (!store.getCampaign(id)) {
+				console.error(`No campaign "${id}" in the base.`);
+				process.exit(1);
+			}
+			const { judged, counts } = judgeCampaign(store, id);
+			console.log(`${judged} runs judged, judge v${JUDGE_VERSION}.`);
+			for (const [model, byVerdict] of Object.entries(counts)) {
+				console.log(`\n${model}`);
+				for (const verdict of VERDICTS)
+					console.log(`  ${verdict.padEnd(18)} ${byVerdict[verdict]}`);
+			}
+		} finally {
+			store.close();
+		}
+	});
+
 program.addHelpText(
 	"after",
 	`
 Examples:
   $ hijackbench run campaigns/reference-v0.yaml
   $ hijackbench resume reference-v0
+  $ hijackbench judge reference-v0
   $ hijackbench stop "VRAM at 94 °C"`,
 );
 
