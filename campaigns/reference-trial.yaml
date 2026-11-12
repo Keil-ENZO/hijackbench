@@ -1,12 +1,12 @@
 # Short trial before the J3 reference runs: one run per case, to check
 # the fans and the thermal pause. See US-19.
 # 8 tasks x 3 models x 1 run = 24 runs.
-id: reference-trial
+id: reference-trial-r2
 name: Trial of the reference runs, one run per case
 models:
-  - llama3.1:8b-instruct-q4_K_M
+  - qwen3-coder:30b-a3b-q4_K_M
   - gemma4:26b
-  - granite4.2:8b-q4_K_M
+  - devstral-small-2:24b
 tasks: all
 runs: 1
 

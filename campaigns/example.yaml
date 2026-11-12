@@ -13,7 +13,7 @@ name: Two tasks, one attack, two models
 # Runs go model by model: only one model sits in VRAM at a time.
 models:
   - gemma4:26b
-  - llama3.1:8b-instruct-q4_K_M
+  - qwen3-coder:30b-a3b-q4_K_M
 
 # Reference runs, without attack: "all" for T1 to T8, or a list.
 tasks: [T2, T5]

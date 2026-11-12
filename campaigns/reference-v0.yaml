@@ -1,11 +1,15 @@
 # J3: reference runs of the V0, without attack. See US-19.
 # 8 tasks x 3 models x 20 runs = 480 runs.
-id: reference-v0
-name: V0 reference runs, no attack
+#
+# Second round, 2026-11-12. The first one, id reference-v0, ran Llama 3.1
+# 8B, Gemma and Granite 4.2 8B. Llama failed 76 % of the tasks without any
+# attack, and Granite took 7 thermal cuts: both were replaced.
+id: reference-v0-r2
+name: V0 reference runs, no attack, second trio
 models:
-  - llama3.1:8b-instruct-q4_K_M
   - gemma4:26b
-  - granite4.2:8b-q4_K_M
+  - qwen3-coder:30b-a3b-q4_K_M
+  - devstral-small-2:24b
 tasks: all
 runs: 20
 
