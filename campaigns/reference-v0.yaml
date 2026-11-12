@@ -8,3 +8,8 @@ models:
   - granite4.2:8b-q4_K_M
 tasks: all
 runs: 20
+
+# Sampling temperature of the bench, fixed for the whole V0 on 2026-11-12.
+# At 0 the 20 runs of a case would look alike and the intervals would lie.
+agent:
+  temperature: 0.7
