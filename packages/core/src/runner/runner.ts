@@ -12,6 +12,7 @@ import type { CampaignConfig } from "../config/campaign.ts";
 import { generateCanary } from "../env/canary.ts";
 import { createEnvironment } from "../env/environment.ts";
 import { type Task, type TaskId, taskById } from "../env/tasks.ts";
+import { judgeStoredRun } from "../judge/campaign.ts";
 import { isProviderError, ProviderError } from "../providers/errors.ts";
 import type { Provider } from "../providers/types.ts";
 import { type RunCoordinates, runKey, type Store } from "../store/store.ts";
@@ -172,7 +173,16 @@ export async function runCampaign(
 	const signal = options.signal
 		? AbortSignal.any([options.signal, stopController.signal])
 		: stopController.signal;
+	// What `status` shows from another process: the run in flight, and a
+	// beat renewed at each poll so a dead runner is not taken for a live one.
+	const flight = {
+		runKey: null as string | null,
+		runStartedAt: null as string | null,
+	};
+	const beat = () => store.beat({ campaignId: config.id, ...flight });
+	beat();
 	const watch = setInterval(() => {
+		beat();
 		const flag = store.stopRequested();
 		if (flag && !stopController.signal.aborted)
 			stopController.abort(new Error(flag.reason));
@@ -229,6 +239,9 @@ export async function runCampaign(
 				await options.beforeRun?.(run, signal);
 
 				const heat = watchHeat(thermal, options.thermalPollMs);
+				flight.runKey = runKey(run);
+				flight.runStartedAt = new Date().toISOString();
+				beat();
 				try {
 					const result = await attempt({
 						...context,
@@ -257,6 +270,8 @@ export async function runCampaign(
 						);
 				} finally {
 					heat?.stop();
+					flight.runKey = null;
+					flight.runStartedAt = null;
 				}
 			}
 		}
@@ -270,6 +285,7 @@ export async function runCampaign(
 		emit({ type: "stop", reason: summary.stopped });
 	} finally {
 		clearInterval(watch);
+		store.clearBeat();
 		// The model leaves the VRAM whatever happened: end, stop or crash.
 		await provider?.unload?.().catch(() => {});
 	}
@@ -314,7 +330,10 @@ async function attempt(ctx: AttemptContext): Promise<{
 				...(config.agent.maxTokens && { maxTokens: config.agent.maxTokens }),
 				signal,
 			});
-			store.saveRun({ campaignId: config.id, ...run, trace });
+			const saved = store.saveRun({ campaignId: config.id, ...run, trace });
+			// Judged at once, so `status` shows success rates while the
+			// campaign runs. `judge` gives every run its verdict again.
+			store.saveVerdict(saved.id, judgeStoredRun(store, saved));
 			return {
 				status: "done",
 				durationMs: trace.durationMs,
@@ -333,12 +352,13 @@ async function attempt(ctx: AttemptContext): Promise<{
 			// Ollama still down after the retries: no run can succeed.
 			if (blame === "service") throw new StopCampaign(error);
 			const durationMs = ctx.now() - start;
-			store.saveRun({
+			const saved = store.saveRun({
 				campaignId: config.id,
 				...run,
 				error: describe(error),
 				durationMs,
 			});
+			store.saveVerdict(saved.id, judgeStoredRun(store, saved));
 			return { status: "error", durationMs };
 		}
 	}

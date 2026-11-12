@@ -7,7 +7,7 @@
 
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { type Trace, TraceSchema } from "../agent/trace.ts";
@@ -26,6 +26,7 @@ import {
 
 const MIGRATIONS = fileURLToPath(new URL("./migrations", import.meta.url));
 const STOP = "stop";
+const HEARTBEAT = "heartbeat";
 
 // Where a run sits in the campaign plan.
 export type RunCoordinates = {
@@ -51,6 +52,14 @@ export type StoredVerdict = typeof verdicts.$inferSelect;
 export type Annotation = typeof annotations.$inferSelect;
 export type StoredPause = typeof pauses.$inferSelect;
 
+// What the runner is doing right now, for `status` in another process.
+export type Heartbeat = {
+	campaignId: string;
+	// The run in flight, as its key in the plan, and when it started.
+	runKey: string | null;
+	runStartedAt: string | null;
+};
+
 export type Store = ReturnType<typeof openStore>;
 
 // ":memory:" for tests. Applies pending migrations on open.
@@ -72,6 +81,15 @@ export function openStore(path: string) {
 
 		getCampaign(id: string): Campaign | undefined {
 			return db.select().from(campaigns).where(eq(campaigns.id, id)).get();
+		},
+
+		// The newest first.
+		listCampaigns(): Campaign[] {
+			return db
+				.select()
+				.from(campaigns)
+				.orderBy(desc(campaigns.createdAt), desc(sql`rowid`))
+				.all();
 		},
 
 		// Writes the run and its trace in one transaction. Throws if the run
@@ -170,6 +188,17 @@ export function openStore(path: string) {
 			return db.select().from(verdicts).where(eq(verdicts.runId, runId)).get();
 		},
 
+		// The task success of every judged run of a campaign, by run id.
+		listTaskSuccess(campaignId: string): Map<number, boolean> {
+			const rows = db
+				.select({ runId: verdicts.runId, taskSuccess: verdicts.taskSuccess })
+				.from(verdicts)
+				.innerJoin(runs, eq(runs.id, verdicts.runId))
+				.where(eq(runs.campaignId, campaignId))
+				.all();
+			return new Map(rows.map((row) => [row.runId, row.taskSuccess]));
+		},
+
 		saveAnnotation(
 			runId: number,
 			annotation: { verdict: Verdict; note?: string | null },
@@ -238,6 +267,35 @@ export function openStore(path: string) {
 
 		clearStop() {
 			db.delete(control).where(eq(control.key, STOP)).run();
+		},
+
+		// The runner beats while it lives. A beat that stops being renewed
+		// means the campaign is no longer running, even after a crash.
+		beat(heartbeat: Heartbeat) {
+			const value = JSON.stringify(heartbeat);
+			const at = new Date().toISOString();
+			db.insert(control)
+				.values({ key: HEARTBEAT, value, updatedAt: at })
+				.onConflictDoUpdate({
+					target: control.key,
+					set: { value, updatedAt: at },
+				})
+				.run();
+		},
+
+		heartbeat(): (Heartbeat & { at: string }) | undefined {
+			const row = db
+				.select()
+				.from(control)
+				.where(eq(control.key, HEARTBEAT))
+				.get();
+			return (
+				row && { ...(JSON.parse(row.value) as Heartbeat), at: row.updatedAt }
+			);
+		},
+
+		clearBeat() {
+			db.delete(control).where(eq(control.key, HEARTBEAT)).run();
 		},
 
 		close() {

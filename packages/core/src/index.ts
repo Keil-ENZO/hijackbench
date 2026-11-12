@@ -6,5 +6,6 @@ export * from "./env/index.ts";
 export * from "./judge/index.ts";
 export * from "./providers/index.ts";
 export * from "./runner/index.ts";
+export * from "./status/index.ts";
 export * from "./store/index.ts";
 export * from "./thermal/index.ts";
