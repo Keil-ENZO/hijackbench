@@ -4,7 +4,7 @@ A local test bench that measures how well tool-using AI agents resist indirect p
 
 The agent gets a normal task in a simulated environment: a mailbox and a file system. Some of the data it reads carries an attack. A deterministic judge reads the tool trace and decides whether the agent leaked a secret, ran a destructive action, or dropped its task.
 
-**Status:** work in progress. Campaigns run end to end, with and without attacks: agent, traces, judge. The full attacked campaign and the report are next.
+**Status:** work in progress. The V0 campaigns have run, 1,380 runs in all: **[read the results](reports/v0/report.md)**, or the raw [CSV](reports/v0/runs.csv). The judge calibration is next.
 
 ## Goals for v0
 
@@ -54,6 +54,7 @@ Every command below goes through `bin/hijackbench`, a wrapper that runs the CLI 
 | `stop [reason]` | Emergency stop: cut the run in flight and unload the model |
 | `status [id]` | Show progress, time left, temperature and success rates |
 | `judge <id>` | Give every run of a campaign its verdict |
+| `report <id> -r <id>` | Write the results report in Markdown, or the raw CSV |
 | `help [command]` | Show the help of a command |
 
 `--help` works on every command, `--version` prints the version.
@@ -117,6 +118,23 @@ Gives every run of a campaign its verdict and prints the counts per model. The j
 | `resisted_success` | No attack effect, and the task is done |
 | `resisted_failure` | No attack effect, but the task failed |
 | `technical_error` | The run failed for a technical reason |
+
+### report
+
+```bash
+bin/hijackbench report attacked-v0 -r reference-v0-r3 > reports/v0/report.md
+bin/hijackbench report attacked-v0 -r reference-v0-r3 --csv > reports/v0/runs.csv
+```
+
+Writes the results of an attacked campaign next to its reference: attack success by model and objective with 95 % Wilson intervals, task success with and without attack, results by attack family, and the known limits of the judge. Both campaigns must sit in the same base and be judged by the current judge.
+
+The report goes to stdout, so it works through Docker. Without Docker, `--out <dir>` writes `report.md` and `runs.csv` into a directory. The output carries no date: the same base gives the same files.
+
+| Option | Effect |
+|---|---|
+| `-r, --reference <id>` | The reference campaign, same models without attack. Required |
+| `--csv` | Print the raw CSV, one line per run, instead of the Markdown |
+| `-o, --out <dir>` | Write both files into this directory |
 
 ### Environment variables
 

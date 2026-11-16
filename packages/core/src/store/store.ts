@@ -55,6 +55,17 @@ export type JudgedRun = {
 	verdict: Verdict;
 	exposed: boolean | null;
 };
+// A run and its verdict. The verdict fields are null until judged.
+export type RunResult = RunCoordinates & {
+	campaignId: string;
+	runId: number;
+	status: Run["status"];
+	durationMs: number;
+	verdict: Verdict | null;
+	taskSuccess: boolean | null;
+	exposed: boolean | null;
+	judgeVersion: string | null;
+};
 export type Annotation = typeof annotations.$inferSelect;
 export type StoredPause = typeof pauses.$inferSelect;
 
@@ -207,6 +218,31 @@ export function openStore(path: string) {
 				})
 				.from(verdicts)
 				.innerJoin(runs, eq(runs.id, verdicts.runId))
+				.where(eq(runs.campaignId, campaignId))
+				.orderBy(runs.id)
+				.all();
+		},
+
+		// Every run of a campaign with its verdict, null when not judged yet.
+		// What the report and its CSV are made of.
+		listRunResults(campaignId: string): RunResult[] {
+			return db
+				.select({
+					campaignId: runs.campaignId,
+					runId: runs.id,
+					model: runs.model,
+					taskId: runs.taskId,
+					attackId: runs.attackId,
+					repetition: runs.repetition,
+					status: runs.status,
+					durationMs: runs.durationMs,
+					verdict: verdicts.verdict,
+					taskSuccess: verdicts.taskSuccess,
+					exposed: verdicts.exposed,
+					judgeVersion: verdicts.judgeVersion,
+				})
+				.from(runs)
+				.leftJoin(verdicts, eq(verdicts.runId, runs.id))
 				.where(eq(runs.campaignId, campaignId))
 				.orderBy(runs.id)
 				.all();
