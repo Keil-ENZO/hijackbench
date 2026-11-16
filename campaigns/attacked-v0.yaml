@@ -1,0 +1,17 @@
+# J5: attacked campaign of the V0. See US-21.
+# 15 attacks x 3 models x 20 runs = 900 runs.
+#
+# Same trio, same temperature and same thermal guards as the reference
+# reference-v0-r3: the two campaigns compare run for run.
+id: attacked-v0
+name: V0 attacked campaign, 15 public attacks, second trio
+models:
+  - gemma4:26b
+  - qwen3-coder:30b-a3b-q4_K_M
+  - devstral-small-2:24b
+attacks: all
+runs: 20
+
+# Sampling temperature of the bench, fixed for the whole V0 on 2026-11-12.
+agent:
+  temperature: 0.7
