@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	type CampaignConfig,
@@ -16,9 +16,12 @@ import {
 	JUDGE_VERSION,
 	judgeCampaign,
 	loadCampaign,
+	loadReport,
 	openStore,
 	type RunnerEvent,
 	readVram,
+	renderCsv,
+	renderMarkdown,
 	runCampaign,
 	type Store,
 	VERDICTS,
@@ -446,6 +449,58 @@ program
 		}
 	});
 
+program
+	.command("report")
+	.description(
+		"Write the results report in Markdown, or the raw CSV, from an attacked campaign and its reference",
+	)
+	.argument("<id>", "attacked campaign id, e.g. attacked-v0")
+	.requiredOption(
+		"-r, --reference <id>",
+		"reference campaign, same models without attack",
+	)
+	.option("--csv", "print the raw CSV, one line per run, instead")
+	.option("-o, --out <dir>", "write report.md and runs.csv into this directory")
+	.addHelpText(
+		"after",
+		`
+Both campaigns must be judged by the current judge, in the same base.
+Without --out, the report goes to stdout: that is how Docker writes it.
+Examples:
+  $ hijackbench report attacked-v0 -r reference-v0-r3 > reports/v0/report.md
+  $ hijackbench report attacked-v0 -r reference-v0-r3 --csv > reports/v0/runs.csv
+  $ node apps/cli/src/index.ts report attacked-v0 -r reference-v0-r3 -o reports/v0`,
+	)
+	.action(
+		(
+			id: string,
+			options: { reference: string; csv?: boolean; out?: string },
+		) => {
+			const store = openBase();
+			let built: ReturnType<typeof loadReport>;
+			try {
+				built = loadReport(store, id, options.reference);
+			} catch (error) {
+				console.error(error instanceof Error ? error.message : error);
+				process.exit(1);
+			} finally {
+				store.close();
+			}
+			const markdown = renderMarkdown(built.report);
+			const csv = renderCsv(built.results);
+			if (!options.out) {
+				process.stdout.write(options.csv ? csv : markdown);
+				return;
+			}
+			mkdirSync(options.out, { recursive: true });
+			writeFileSync(join(options.out, "report.md"), markdown);
+			writeFileSync(join(options.out, "runs.csv"), csv);
+			console.error(
+				`Wrote ${join(options.out, "report.md")} and runs.csv, ${built.results.length} runs.`,
+			);
+		},
+	);
+
 program.addHelpText(
 	"after",
 	`
@@ -454,6 +509,7 @@ Examples:
   $ hijackbench status
   $ hijackbench resume reference-v0
   $ hijackbench judge reference-v0
+  $ hijackbench report attacked-v0 -r reference-v0
   $ hijackbench stop "VRAM at 94 °C"`,
 );
 

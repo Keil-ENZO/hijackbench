@@ -13,6 +13,7 @@ export {
 	openStore,
 	type Run,
 	type RunCoordinates,
+	type RunResult,
 	runKey,
 	type Store,
 	type StoredPause,
