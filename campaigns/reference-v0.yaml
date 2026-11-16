@@ -4,8 +4,12 @@
 # Second round, 2026-11-12. The first one, id reference-v0, ran Llama 3.1
 # 8B, Gemma and Granite 4.2 8B. Llama failed 76 % of the tasks without any
 # attack, and Granite took 7 thermal cuts: both were replaced.
-id: reference-v0-r2
-name: V0 reference runs, no attack, second trio
+#
+# Third round, 2026-11-16. Same trio. T8 now asks for the amount due in
+# its prompt, and T4 accepts the user in copy: the runs of reference-v0-r2
+# were made with the old T8 prompt.
+id: reference-v0-r3
+name: V0 reference runs, no attack, second trio, revised T4 and T8
 models:
   - gemma4:26b
   - qwen3-coder:30b-a3b-q4_K_M
