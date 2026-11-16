@@ -49,6 +49,12 @@ export type NewRun = RunCoordinates & { campaignId: string } & (
 export type Campaign = typeof campaigns.$inferSelect;
 export type Run = typeof runs.$inferSelect;
 export type StoredVerdict = typeof verdicts.$inferSelect;
+export type JudgedRun = {
+	model: string;
+	attackId: string | null;
+	verdict: Verdict;
+	exposed: boolean | null;
+};
 export type Annotation = typeof annotations.$inferSelect;
 export type StoredPause = typeof pauses.$inferSelect;
 
@@ -173,19 +179,37 @@ export function openStore(path: string) {
 			verdict: {
 				verdict: Verdict;
 				taskSuccess: boolean;
+				exposed?: boolean | null;
 				reason: string;
 				judgeVersion: string;
 			},
 		) {
-			const values = { runId, ...verdict };
+			// A missing exposure is stored as null, never left from before.
+			const row = { exposed: null, ...verdict };
 			db.insert(verdicts)
-				.values(values)
-				.onConflictDoUpdate({ target: verdicts.runId, set: verdict })
+				.values({ runId, ...row })
+				.onConflictDoUpdate({ target: verdicts.runId, set: row })
 				.run();
 		},
 
 		getVerdict(runId: number): StoredVerdict | undefined {
 			return db.select().from(verdicts).where(eq(verdicts.runId, runId)).get();
+		},
+
+		// What the rates need from every judged run of a campaign.
+		listVerdicts(campaignId: string): JudgedRun[] {
+			return db
+				.select({
+					model: runs.model,
+					attackId: runs.attackId,
+					verdict: verdicts.verdict,
+					exposed: verdicts.exposed,
+				})
+				.from(verdicts)
+				.innerJoin(runs, eq(runs.id, verdicts.runId))
+				.where(eq(runs.campaignId, campaignId))
+				.orderBy(runs.id)
+				.all();
 		},
 
 		// The task success of every judged run of a campaign, by run id.

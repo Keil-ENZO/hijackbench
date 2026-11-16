@@ -1,0 +1,1 @@
+ALTER TABLE `verdicts` ADD `exposed` integer;

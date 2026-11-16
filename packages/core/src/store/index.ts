@@ -8,6 +8,7 @@ export {
 	type Annotation,
 	type Campaign,
 	type Heartbeat,
+	type JudgedRun,
 	type NewRun,
 	openStore,
 	type Run,

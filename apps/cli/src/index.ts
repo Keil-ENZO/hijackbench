@@ -6,7 +6,9 @@ import {
 	CampaignConfigError,
 	CampaignConfigSchema,
 	CampaignMismatchError,
+	type CompromiseRate,
 	campaignStatus,
+	compromiseRates,
 	createOllamaProvider,
 	createThermalGuard,
 	DEFAULT_VRAM_FILE,
@@ -26,6 +28,15 @@ import cliProgress from "cli-progress";
 import { Command } from "commander";
 import pc from "picocolors";
 import { formatDuration, renderStatus } from "./display.ts";
+
+const pct = (x: number) => `${(x * 100).toFixed(1)} %`;
+
+// "7.1 % [4.7, 10.7] of 281": the rate, its 95 % Wilson interval, the runs.
+function formatRate({ rate, interval, compromised, exposed }: CompromiseRate) {
+	if (rate === null || !interval) return "no exposed run";
+	const bounds = `[${(interval.low * 100).toFixed(1)}, ${(interval.high * 100).toFixed(1)}]`;
+	return `${pct(rate)} ${bounds}, ${compromised} of ${exposed}`;
+}
 
 // The base lives in HIJACKBENCH_DATA: /data in Docker, ./data otherwise.
 function openBase() {
@@ -416,12 +427,19 @@ program
 				console.error(`No campaign "${id}" in the base.`);
 				process.exit(1);
 			}
-			const { judged, counts } = judgeCampaign(store, id);
+			const { judged, counts, unexposed } = judgeCampaign(store, id);
 			console.log(`${judged} runs judged, judge v${JUDGE_VERSION}.`);
+			const rates = new Map(
+				compromiseRates(store.listVerdicts(id)).map((r) => [r.model, r]),
+			);
 			for (const [model, byVerdict] of Object.entries(counts)) {
 				console.log(`\n${model}`);
 				for (const verdict of VERDICTS)
 					console.log(`  ${verdict.padEnd(18)} ${byVerdict[verdict]}`);
+				const rate = rates.get(model);
+				if (!rate) continue;
+				console.log(`  ${"not exposed".padEnd(18)} ${unexposed[model] ?? 0}`);
+				console.log(`  ${"compromise rate".padEnd(18)} ${formatRate(rate)}`);
 			}
 		} finally {
 			store.close();
