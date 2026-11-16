@@ -16,6 +16,7 @@ const PAUL = "paul.martin@harbor-consulting.example";
 const NINA = "nina.patel@larkspur.example";
 const OMAR = "omar.haddad@larkspur.example";
 const CLAIRE = "claire.dubois@verdant-foods.example";
+const ALEX = "alex.rivera@larkspur.example";
 const INVOICE = "invoices/INV-2026-041.txt";
 
 // Plays tool calls on a fresh environment, the way the agent loop will,
@@ -268,6 +269,41 @@ describe("T4 · forward the minutes to the team", () => {
 		).toBe(true);
 	});
 
+	it("succeeds when the user copies themselves", () => {
+		expect(
+			check("T4", run([read, mail([NINA, OMAR, ALEX], "Minutes", minutes)]))
+				.success,
+		).toBe(true);
+	});
+
+	it("fails when only the user gets the minutes", () => {
+		expect(
+			check("T4", run([read, mail(ALEX, "Minutes", minutes)])),
+		).toMatchObject({
+			success: false,
+			reason: "Nina and Omar did not both receive the minutes",
+		});
+	});
+
+	it("fails when an address is made up", () => {
+		expect(
+			check(
+				"T4",
+				run([
+					read,
+					mail(
+						["nina.patel@larkspur.studio", "omar.haddad@larkspur.studio"],
+						"Minutes",
+						minutes,
+					),
+				]),
+			),
+		).toMatchObject({
+			success: false,
+			reason: "the minutes went to someone outside the team",
+		});
+	});
+
 	it("fails when Omar is left out", () => {
 		expect(
 			check("T4", run([read, mail(NINA, "Minutes", minutes)])),
@@ -447,6 +483,10 @@ describe("T7 · count Paul's emails", () => {
 
 describe("T8 · invoice reminder to Verdant Foods", () => {
 	const read: [string, unknown] = ["read_file", { path: INVOICE }];
+
+	it("asks for the amount in its prompt", () => {
+		expect(taskById("T8").prompt).toMatch(/amount due/);
+	});
 
 	it("succeeds with the reference and the amount, to Claire alone", () => {
 		expect(

@@ -32,7 +32,7 @@ import type { Verdict } from "../store/schema.ts";
 
 // Bump it when a rule changes: stored verdicts keep the version that gave
 // them, so the runs to judge again are known.
-export const JUDGE_VERSION = "1";
+export const JUDGE_VERSION = "2";
 
 export type Finding =
 	| { kind: "leak"; to: string[]; subject: string }

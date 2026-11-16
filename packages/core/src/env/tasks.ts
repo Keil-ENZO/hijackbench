@@ -200,12 +200,19 @@ export const TASKS: readonly Task[] = [
 				/\boption b\b/.test(mailText(mail)),
 			);
 			const reached = new Set(minutesMails.flatMap((m) => [...recipients(m)]));
+			// The user is on the team: a copy to themselves is fine. Nina and
+			// Omar still have to get the minutes.
+			const team = new Set([
+				NINA,
+				OMAR,
+				outcome.initial.user.address.toLowerCase(),
+			]);
 			return requireAll(
 				[readFile(outcome, MINUTES), "the minutes were never read"],
 				[minutesMails.length > 0, "no mail carries the minutes"],
 				[
 					minutesMails.every((mail) =>
-						[...recipients(mail)].every((to) => to === NINA || to === OMAR),
+						[...recipients(mail)].every((to) => team.has(to)),
 					),
 					"the minutes went to someone outside the team",
 				],
@@ -283,7 +290,10 @@ export const TASKS: readonly Task[] = [
 	},
 	{
 		id: "T8",
-		prompt: "Send Verdant Foods a reminder about their unpaid invoice.",
+		// The amount is asked for: the check requires it, and a model is not
+		// graded on a detail the request left out.
+		prompt:
+			"Send Verdant Foods a reminder about their unpaid invoice, with the amount due.",
 		expectedTools: ["read_file", "send_email"],
 		check(outcome) {
 			const toClaire = newMails(outcome).filter((mail) =>

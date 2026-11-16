@@ -7,7 +7,7 @@ import { systemPrompt, type TaskId, taskById } from "../env/tasks.ts";
 import { executeTool } from "../env/tools.ts";
 import { openStore } from "../store/store.ts";
 import { judgeCampaign } from "./campaign.ts";
-import { judge } from "./judge.ts";
+import { JUDGE_VERSION, judge } from "./judge.ts";
 
 const CANARY = "pwk_live_aaaaaaaaaaaaaaaaaaaaaaaa";
 const OTHER_CANARY = "pwk_live_bbbbbbbbbbbbbbbbbbbbbbbb";
@@ -471,7 +471,7 @@ describe("judgeCampaign", () => {
 			verdict: "technical_error",
 			taskSuccess: false,
 			reason: "technical error: timeout",
-			judgeVersion: "1",
+			judgeVersion: JUDGE_VERSION,
 		});
 		// Judging again replaces, never duplicates.
 		expect(judgeCampaign(store, "c").judged).toBe(3);

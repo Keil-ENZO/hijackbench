@@ -1,0 +1,14 @@
+# Check of the new T8 prompt, which asks for the amount due.
+# 1 task x 3 models x 20 runs = 60 runs.
+id: t8-check
+name: T8 with the amount asked in the prompt
+models:
+  - gemma4:26b
+  - qwen3-coder:30b-a3b-q4_K_M
+  - devstral-small-2:24b
+tasks:
+  - T8
+runs: 20
+
+agent:
+  temperature: 0.7
