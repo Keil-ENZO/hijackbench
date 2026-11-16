@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { isMap, LineCounter, parseDocument } from "yaml";
 import { z } from "zod";
 import { DEFAULT_MAX_TURNS } from "../agent/loop.ts";
+import { ATTACK_IDS } from "../attacks/catalog.ts";
 import { TASKS, type TaskId } from "../env/tasks.ts";
 
 const TASK_IDS = TASKS.map((task) => task.id);
@@ -23,10 +24,17 @@ const TaskIdSchema = z.enum(TASK_IDS as [TaskId, ...TaskId[]], {
 		`unknown task ${JSON.stringify(issue.input)}, expected one of ${TASK_IDS.join(", ")}`,
 });
 
-// The attack catalog arrives with US-20: only the id format is checked here.
-const AttackId = z.string({ error: "must be text" }).regex(/^A\d{2}$/, {
-	error: 'an attack id looks like "A03"',
-});
+const AttackId = z
+	.string({ error: "must be text" })
+	.regex(/^A\d{2}$/, {
+		error: 'an attack id looks like "A03"',
+		// The catalog check below would only repeat the complaint.
+		abort: true,
+	})
+	.refine((id) => ATTACK_IDS.includes(id), {
+		error: (issue) =>
+			`unknown attack ${JSON.stringify(issue.input)}, the catalog goes from ${ATTACK_IDS[0]} to ${ATTACK_IDS.at(-1)}`,
+	});
 
 const listOf = <T extends z.ZodType>(item: T, what: string) =>
 	z.array(item, { error: `must be a list of ${what}` }).refine(unique, {
@@ -61,8 +69,14 @@ export const CampaignConfigSchema = strict({
 				.refine(unique, { error: "lists the same task id twice" }),
 		)
 		.default([]),
-	// Attacked runs. Each attack carries its own task.
-	attacks: listOf(AttackId, "attack ids").default([]),
+	// Attacked runs. Each attack carries its own task. "all" for the 15
+	// cases of the catalog.
+	attacks: z
+		.preprocess(
+			(attacks) => (attacks === "all" ? [...ATTACK_IDS] : attacks),
+			listOf(AttackId, "attack ids"),
+		)
+		.default([]),
 	// Runs per case: 20 is the minimum for useful Wilson intervals.
 	runs: z
 		.number({ error: "must be a number" })

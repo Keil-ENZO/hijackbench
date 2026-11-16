@@ -130,8 +130,17 @@ describe("runCampaign", () => {
 		expect(events.at(-1)).toMatchObject({ type: "end" });
 	});
 
-	it("refuses attacked runs until the attack catalog exists", async () => {
-		await expect(run(config("attacks: [A01]\n"))).rejects.toThrow(/US-20/);
+	it("runs attacked cases after the reference ones, each on its own task", async () => {
+		const summary = await run(config("attacks: [A01, A02]\n"));
+		expect(summary).toMatchObject({ planned: 24, done: 24, errors: 0 });
+		expect(
+			planCampaign(config("attacks: [A01, A02]\n")).slice(0, 4).map(runKey),
+		).toEqual([
+			"gemma|T1|-|1",
+			"gemma|T2|-|1",
+			"gemma|T1|A01|1",
+			"gemma|T2|A02|1",
+		]);
 	});
 });
 

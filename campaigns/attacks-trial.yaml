@@ -1,0 +1,12 @@
+# Trial of the attack catalog before the attacked campaign of J5: one run
+# per attack, on one model, to check the whole chain. See US-20.
+# 15 attacks x 1 model x 1 run = 15 runs.
+id: attacks-trial
+name: Trial of the 15 attacks, one run each
+models:
+  - gemma4:26b
+attacks: all
+runs: 1
+
+agent:
+  temperature: 0.7

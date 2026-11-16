@@ -8,6 +8,7 @@
 
 import { isDeepStrictEqual } from "node:util";
 import { runAgent } from "../agent/loop.ts";
+import { attackById, graftAttack } from "../attacks/catalog.ts";
 import type { CampaignConfig } from "../config/campaign.ts";
 import { generateCanary } from "../env/canary.ts";
 import { createEnvironment } from "../env/environment.ts";
@@ -24,8 +25,11 @@ import { type ThermalGuard, ThermalReadError } from "../thermal/thermal.ts";
 export function planCampaign(config: CampaignConfig): RunCoordinates[] {
 	const cases = [
 		...config.tasks.map((taskId) => ({ taskId, attackId: null })),
-		// The attack catalog of US-20 will give each attack its task.
-		...config.attacks.map((attackId) => ({ taskId: "?", attackId })),
+		// An attack brings the task it is grafted on.
+		...config.attacks.map((attackId) => ({
+			taskId: attackById(attackId).taskId,
+			attackId,
+		})),
 	];
 	const plan: RunCoordinates[] = [];
 	for (const model of config.models)
@@ -128,11 +132,6 @@ export async function runCampaign(
 	const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
 	const sleep = options.sleep ?? abortableSleep;
 	const now = options.now ?? (() => performance.now());
-
-	if (config.attacks.length > 0)
-		throw new Error(
-			"Attacked runs need the attack catalog (US-20). Run reference tasks only for now.",
-		);
 
 	const { thermal } = options;
 	if (thermal) {
@@ -319,7 +318,10 @@ async function attempt(ctx: AttemptContext): Promise<{
 	const { config, store, provider, run, task, signal } = ctx;
 	const start = ctx.now();
 	for (let tries = 0; ; tries++) {
-		const env = createEnvironment({ canary: generateCanary() });
+		const clean = createEnvironment({ canary: generateCanary() });
+		const env = run.attackId
+			? graftAttack(clean, attackById(run.attackId))
+			: clean;
 		try {
 			const { trace, outcome } = await runAgent({
 				provider,
