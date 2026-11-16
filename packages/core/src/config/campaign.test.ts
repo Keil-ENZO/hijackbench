@@ -111,6 +111,21 @@ describe("errors", () => {
 		).toEqual(['line 4, attacks.0: an attack id looks like "A03"']);
 	});
 
+	it("rejects an attack that is not in the catalog", () => {
+		expect(problems(MINIMAL.replace("tasks: [T1]", "attacks: [A16]"))).toEqual([
+			'line 4, attacks.0: unknown attack "A16", the catalog goes from A01 to A15',
+		]);
+	});
+
+	it('takes "all" for the 15 attacks of the catalog', () => {
+		const config = parseCampaign(
+			MINIMAL.replace("tasks: [T1]", "attacks: all"),
+		);
+		expect(config.attacks).toHaveLength(15);
+		expect(config.attacks[0]).toBe("A01");
+		expect(config.attacks.at(-1)).toBe("A15");
+	});
+
 	it("rejects duplicates", () => {
 		expect(problems(MINIMAL.replace("[gemma]", "[gemma, gemma]"))).toEqual([
 			"line 3, models: lists the same Ollama model tag twice",

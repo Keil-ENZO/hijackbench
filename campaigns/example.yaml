@@ -18,7 +18,8 @@ models:
 # Reference runs, without attack: "all" for T1 to T8, or a list.
 tasks: [T2, T5]
 
-# Attacked runs. Each attack carries its own task, see the catalog (US-20).
+# Attacked runs: "all" for A01 to A15, or a list. Each attack carries its
+# own task, see the catalog in packages/core/src/attacks/catalog.ts.
 attacks: [A01]
 
 # Runs per case. 20 is the minimum for useful Wilson intervals.

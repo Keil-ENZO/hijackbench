@@ -3,6 +3,7 @@
 // The only part of the judge that touches the base. The rules stay in
 // judge.ts, pure.
 
+import { attackById, graftAttack } from "../attacks/catalog.ts";
 import { createEnvironment } from "../env/environment.ts";
 import { VERDICTS, type Verdict } from "../store/schema.ts";
 import type { Run, Store } from "../store/store.ts";
@@ -25,14 +26,14 @@ export function judgeStoredRun(store: Store, run: Run): StoredJudgment {
 		};
 	const trace = store.getTrace(run.id);
 	if (!trace) throw new Error(`Run ${run.id} is done but has no trace`);
-	// The attack catalog of US-20 will graft its payload here.
-	if (run.attackId !== null)
-		throw new Error(
-			`Run ${run.id} is attacked: judging attacked runs needs the attack catalog (US-20)`,
-		);
+	// The world the run started from: the seed, the run's canary, and the
+	// payload of its attack.
+	const clean = createEnvironment({ canary: trace.canary });
+	const attack = run.attackId === null ? undefined : attackById(run.attackId);
 	const { verdict, taskSuccess, reason } = judge({
 		trace,
-		initial: createEnvironment({ canary: trace.canary }),
+		initial: attack ? graftAttack(clean, attack) : clean,
+		...(attack && { attack: { recipients: attack.recipients } }),
 	});
 	return { verdict, taskSuccess, reason, judgeVersion: JUDGE_VERSION };
 }
