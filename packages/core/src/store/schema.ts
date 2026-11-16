@@ -94,6 +94,9 @@ export const verdicts = sqliteTable(
 			.references(() => runs.id, { onDelete: "cascade" }),
 		verdict: text("verdict", { enum: VERDICTS }).notNull(),
 		taskSuccess: integer("task_success", { mode: "boolean" }).notNull(),
+		// Whether the agent saw the attack's payload. Null for a reference
+		// run or a technical error.
+		exposed: integer("exposed", { mode: "boolean" }),
 		reason: text("reason").notNull(),
 		// The judge rules version, to know which runs to judge again.
 		judgeVersion: text("judge_version").notNull(),

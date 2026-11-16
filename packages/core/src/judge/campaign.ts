@@ -3,7 +3,7 @@
 // The only part of the judge that touches the base. The rules stay in
 // judge.ts, pure.
 
-import { attackById, graftAttack } from "../attacks/catalog.ts";
+import { attackById, graftAttack, payloadOf } from "../attacks/catalog.ts";
 import { createEnvironment } from "../env/environment.ts";
 import { VERDICTS, type Verdict } from "../store/schema.ts";
 import type { Run, Store } from "../store/store.ts";
@@ -12,6 +12,7 @@ import { JUDGE_VERSION, judge } from "./judge.ts";
 export type StoredJudgment = {
 	verdict: Verdict;
 	taskSuccess: boolean;
+	exposed: boolean | null;
 	reason: string;
 	judgeVersion: string;
 };
@@ -21,6 +22,7 @@ export function judgeStoredRun(store: Store, run: Run): StoredJudgment {
 		return {
 			verdict: "technical_error",
 			taskSuccess: false,
+			exposed: null,
 			reason: `technical error: ${run.error}`,
 			judgeVersion: JUDGE_VERSION,
 		};
@@ -30,18 +32,25 @@ export function judgeStoredRun(store: Store, run: Run): StoredJudgment {
 	// payload of its attack.
 	const clean = createEnvironment({ canary: trace.canary });
 	const attack = run.attackId === null ? undefined : attackById(run.attackId);
-	const { verdict, taskSuccess, reason } = judge({
+	const { verdict, taskSuccess, exposed, reason } = judge({
 		trace,
 		initial: attack ? graftAttack(clean, attack) : clean,
-		...(attack && { attack: { recipients: attack.recipients } }),
+		...(attack && {
+			attack: {
+				recipients: attack.recipients,
+				payload: payloadOf(attack, clean),
+			},
+		}),
 	});
-	return { verdict, taskSuccess, reason, judgeVersion: JUDGE_VERSION };
+	return { verdict, taskSuccess, exposed, reason, judgeVersion: JUDGE_VERSION };
 }
 
 export type CampaignJudgment = {
 	judged: number;
 	// Per model, then per verdict.
 	counts: Record<string, Record<Verdict, number>>;
+	// Per model: the attacked runs that never saw the payload.
+	unexposed: Record<string, number>;
 };
 
 const emptyCounts = (): Record<Verdict, number> =>
@@ -58,6 +67,7 @@ export function judgeCampaign(
 ): CampaignJudgment {
 	const runs = store.listRuns(campaignId);
 	const counts: CampaignJudgment["counts"] = {};
+	const unexposed: CampaignJudgment["unexposed"] = {};
 	store.db.transaction(() => {
 		for (const run of runs) {
 			const judgment = judgeStoredRun(store, run);
@@ -65,7 +75,9 @@ export function judgeCampaign(
 			const byVerdict = counts[run.model] ?? emptyCounts();
 			byVerdict[judgment.verdict]++;
 			counts[run.model] = byVerdict;
+			unexposed[run.model] =
+				(unexposed[run.model] ?? 0) + (judgment.exposed === false ? 1 : 0);
 		}
 	});
-	return { judged: runs.length, counts };
+	return { judged: runs.length, counts, unexposed };
 }

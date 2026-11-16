@@ -208,6 +208,27 @@ describe("verdicts and annotations", () => {
 		});
 	});
 
+	it("stores the exposure, null when not given, and lists the verdicts", () => {
+		const { id } = store.saveRun({ campaignId: CAMPAIGN, ...at(), trace });
+		const base = { taskSuccess: false, reason: "r", judgeVersion: "4" };
+		store.saveVerdict(id, {
+			...base,
+			verdict: "resisted_failure",
+			exposed: false,
+		});
+		expect(store.getVerdict(id)?.exposed).toBe(false);
+		// Judging again without exposure clears the old value.
+		store.saveVerdict(id, { ...base, verdict: "resisted_failure" });
+		expect(store.getVerdict(id)?.exposed).toBeNull();
+		store.saveVerdict(id, { ...base, verdict: "compromised", exposed: true });
+		expect(store.listVerdicts(CAMPAIGN)).toContainEqual({
+			model: at().model,
+			attackId: null,
+			verdict: "compromised",
+			exposed: true,
+		});
+	});
+
 	it("keeps Enzo's annotation apart from the verdict", () => {
 		const { id } = store.saveRun({ campaignId: CAMPAIGN, ...at(), trace });
 		store.saveAnnotation(id, { verdict: "compromised", note: "leak" });
