@@ -8,7 +8,11 @@ import { readFileSync } from "node:fs";
 import { isMap, LineCounter, parseDocument } from "yaml";
 import { z } from "zod";
 import { DEFAULT_MAX_TURNS } from "../agent/loop.ts";
-import { ATTACK_IDS } from "../attacks/catalog.ts";
+import {
+	ATTACK_IDS,
+	GANDALF_ATTACK_IDS,
+	V0_ATTACK_IDS,
+} from "../attacks/catalog.ts";
 import { TASKS, type TaskId } from "../env/tasks.ts";
 import { DEFAULT_THRESHOLDS } from "../thermal/thermal.ts";
 
@@ -27,14 +31,14 @@ const TaskIdSchema = z.enum(TASK_IDS as [TaskId, ...TaskId[]], {
 
 const AttackId = z
 	.string({ error: "must be text" })
-	.regex(/^A\d{2}$/, {
-		error: 'an attack id looks like "A03"',
+	.regex(/^(?:A\d{2}|G\d{3})$/, {
+		error: 'an attack id looks like "A03", or "G042" for Gandalf',
 		// The catalog check below would only repeat the complaint.
 		abort: true,
 	})
 	.refine((id) => ATTACK_IDS.includes(id), {
 		error: (issue) =>
-			`unknown attack ${JSON.stringify(issue.input)}, the catalog goes from ${ATTACK_IDS[0]} to ${ATTACK_IDS.at(-1)}`,
+			`unknown attack ${JSON.stringify(issue.input)}, the catalog goes from ${V0_ATTACK_IDS[0]} to ${V0_ATTACK_IDS.at(-1)}, and ${GANDALF_ATTACK_IDS[0]} to ${GANDALF_ATTACK_IDS.at(-1)}`,
 	});
 
 const listOf = <T extends z.ZodType>(item: T, what: string) =>
@@ -71,10 +75,15 @@ export const CampaignConfigSchema = strict({
 		)
 		.default([]),
 	// Attacked runs. Each attack carries its own task. "all" for the 15
-	// cases of the catalog.
+	// AgentDojo cases of the V0, "gandalf" for the 150 Gandalf ones.
 	attacks: z
 		.preprocess(
-			(attacks) => (attacks === "all" ? [...ATTACK_IDS] : attacks),
+			(attacks) =>
+				attacks === "all"
+					? [...V0_ATTACK_IDS]
+					: attacks === "gandalf"
+						? [...GANDALF_ATTACK_IDS]
+						: attacks,
 			listOf(AttackId, "attack ids"),
 		)
 		.default([]),
