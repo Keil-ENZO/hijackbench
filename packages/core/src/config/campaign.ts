@@ -10,6 +10,7 @@ import { z } from "zod";
 import { DEFAULT_MAX_TURNS } from "../agent/loop.ts";
 import { ATTACK_IDS } from "../attacks/catalog.ts";
 import { TASKS, type TaskId } from "../env/tasks.ts";
+import { DEFAULT_THRESHOLDS } from "../thermal/thermal.ts";
 
 const TASK_IDS = TASKS.map((task) => task.id);
 
@@ -111,9 +112,9 @@ export const CampaignConfigSchema = strict({
 	thermal: strict({
 		// false only on a machine without the 3090, e.g. to try a campaign.
 		enabled: z.boolean({ error: "must be true or false" }).default(true),
-		pauseAt: z.number().default(84),
-		resumeAt: z.number().default(60),
-		abortAt: z.number().default(90),
+		pauseAt: z.number().default(DEFAULT_THRESHOLDS.pauseAt),
+		resumeAt: z.number().default(DEFAULT_THRESHOLDS.resumeAt),
+		abortAt: z.number().default(DEFAULT_THRESHOLDS.abortAt),
 	})
 		.prefault({})
 		.refine((t) => t.resumeAt < t.pauseAt && t.pauseAt < t.abortAt, {

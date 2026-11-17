@@ -49,6 +49,8 @@ Every command below goes through `bin/hijackbench`, a wrapper that runs the CLI 
 
 | Command | What it does |
 |---|---|
+| `doctor [file]` | Check the install before a campaign, and a campaign file if given |
+| `models` | List the Ollama models, their tool support and what is loaded |
 | `run <file>` | Run a campaign from its config file |
 | `resume <id>` | Resume a stopped campaign, with the config stored in the base |
 | `stop [reason]` | Emergency stop: cut the run in flight and unload the model |
@@ -59,6 +61,30 @@ Every command below goes through `bin/hijackbench`, a wrapper that runs the CLI 
 | `help [command]` | Show the help of a command |
 
 `--help` works on every command, `--version` prints the version.
+
+### doctor
+
+```bash
+bin/hijackbench doctor campaigns/attacked-v0.yaml
+```
+
+Checks what a campaign needs, one line each, and says what to do when a check fails:
+
+- the base: its path and how many campaigns it holds. An empty base often means another Docker setup, with its own data volume;
+- Ollama: reachable, and how many models support tool calls;
+- the thermal probe: a fresh reading from gputemps-exporter;
+- the GPU: nvidia-smi out of Docker, the exporter's reading in it. A loaded model that does not fit in VRAM is flagged;
+- with a file: the campaign is valid, and each of its models is installed with tool support.
+
+It loads no model, so it never heats the card. Exit code 1 when something must be fixed, 0 otherwise, warnings included.
+
+### models
+
+```bash
+bin/hijackbench models
+```
+
+Lists the installed Ollama models: parameters, quantization, size, tool support, and the share in VRAM of those loaded. A campaign needs tool support.
 
 ### run
 
@@ -162,8 +188,9 @@ It needs a terminal: over SSH, use `ssh -t`.
 |---|---|---|
 | `HIJACKBENCH_DATA` | `data`, `/data` in Docker | Directory of the SQLite base |
 | `HIJACKBENCH_VRAM_FILE` | `/var/lib/node_exporter/textfile/gputemps.prom` | File holding the GPU memory temperature |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama, for `doctor` and `models` without a campaign file |
 
-The Ollama address is not a variable: it is set per campaign, with `ollama.baseUrl` in the campaign file. See `campaigns/example.yaml` for every field.
+A campaign sets its own Ollama address, with `ollama.baseUrl` in its file. See `campaigns/example.yaml` for every field.
 
 ## Development
 

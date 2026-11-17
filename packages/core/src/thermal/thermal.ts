@@ -17,6 +17,13 @@ const MAX_AGE_MS = 30_000;
 
 export type Thresholds = { pauseAt: number; resumeAt: number; abortAt: number };
 
+// The J0 measure, in °C. A campaign file may set its own.
+export const DEFAULT_THRESHOLDS: Thresholds = {
+	pauseAt: 84,
+	resumeAt: 60,
+	abortAt: 90,
+};
+
 export type Reading = { vram: number; updatedAt: number };
 
 export class ThermalReadError extends Error {
