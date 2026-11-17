@@ -60,7 +60,20 @@ Every command below goes through `bin/hijackbench`, a wrapper that runs the CLI 
 | `annotate <id>` | Show runs drawn from a campaign and record your own verdict |
 | `help [command]` | Show the help of a command |
 
-`--help` works on every command, `--version` prints the version.
+`--help` works on every command, with examples. `--version` prints the version.
+
+- **JSON.** `doctor`, `models`, `status` and `judge` take `--json`, for scripts. `report --csv` gives the raw runs.
+- **Colors** only in a terminal. `NO_COLOR` turns them off, `FORCE_COLOR` turns them on in a pipe.
+- **Errors** show a message, never a stack trace. `HIJACKBENCH_DEBUG=1` adds it, for a bug report.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Failure: a check failed, a campaign or file is missing, an error |
+| 2 | Usage error: unknown command or option, missing argument |
+| 130 | A campaign stopped by Ctrl+C or `stop` |
+
+What every command must meet: [CLI checklist](docs/cli-checklist.md).
 
 ### doctor
 
@@ -188,6 +201,7 @@ It needs a terminal: over SSH, use `ssh -t`.
 |---|---|---|
 | `HIJACKBENCH_DATA` | `data`, `/data` in Docker | Directory of the SQLite base |
 | `HIJACKBENCH_VRAM_FILE` | `/var/lib/node_exporter/textfile/gputemps.prom` | File holding the GPU memory temperature |
+| `HIJACKBENCH_DEBUG` | unset | Set to 1 to show the stack trace of an error |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama, for `doctor` and `models` without a campaign file |
 
 A campaign sets its own Ollama address, with `ollama.baseUrl` in its file. See `campaigns/example.yaml` for every field.
