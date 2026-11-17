@@ -33,6 +33,7 @@ import {
 	renderMarkdown,
 	runCampaign,
 	runDoctor,
+	runsLeft,
 	type Store,
 	ThermalReadError,
 	VERDICTS,
@@ -243,6 +244,14 @@ function progressBar(store: Store, config: CampaignConfig) {
 
 async function execute(config: CampaignConfig) {
 	const store = openBase();
+	// A complete campaign has nothing to run: say so, and touch nothing.
+	if (runsLeft(store, config) === 0) {
+		store.close();
+		console.log(
+			`Campaign ${config.id} is already complete: nothing to run. To run it again, give the file a new id.`,
+		);
+		return;
+	}
 	// Ctrl+C stops cleanly: the run in flight is dropped, resume reruns it.
 	const controller = new AbortController();
 	const onSignal = () => controller.abort(new Error("interrupted"));

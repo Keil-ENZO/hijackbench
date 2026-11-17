@@ -6,4 +6,5 @@ export {
 	type RunnerEvent,
 	type RunnerSummary,
 	runCampaign,
+	runsLeft,
 } from "./runner.ts";

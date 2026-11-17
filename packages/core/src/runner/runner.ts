@@ -123,6 +123,19 @@ export function ensureCampaign(store: Store, config: CampaignConfig) {
 		);
 }
 
+// Runs still to do for a campaign already in the base, or undefined when
+// it is new. Throws CampaignMismatchError like a run would: a count from
+// another config would mean nothing.
+export function runsLeft(
+	store: Store,
+	config: CampaignConfig,
+): number | undefined {
+	if (!store.getCampaign(config.id)) return undefined;
+	ensureCampaign(store, config);
+	const stored = store.storedKeys(config.id);
+	return planCampaign(config).filter((run) => !stored.has(runKey(run))).length;
+}
+
 export async function runCampaign(
 	options: RunCampaignOptions,
 ): Promise<RunnerSummary> {
