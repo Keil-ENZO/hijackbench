@@ -1,5 +1,6 @@
 export {
 	createThermalGuard,
+	DEFAULT_THRESHOLDS,
 	DEFAULT_VRAM_FILE,
 	type Pause,
 	parseGputemps,

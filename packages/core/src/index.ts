@@ -4,6 +4,7 @@ export * from "./agent/index.ts";
 export * from "./annotate/index.ts";
 export * from "./attacks/index.ts";
 export * from "./config/index.ts";
+export * from "./doctor/index.ts";
 export * from "./env/index.ts";
 export * from "./judge/index.ts";
 export * from "./providers/index.ts";

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -11,9 +12,13 @@ import {
 	type CompromiseRate,
 	campaignStatus,
 	compromiseRates,
+	createOllamaClient,
 	createOllamaProvider,
 	createThermalGuard,
+	DEFAULT_OLLAMA_URL,
+	DEFAULT_THRESHOLDS,
 	DEFAULT_VRAM_FILE,
+	type DoctorInput,
 	defaultCampaignId,
 	JUDGE_VERSION,
 	judgeCampaign,
@@ -26,6 +31,7 @@ import {
 	renderCsv,
 	renderMarkdown,
 	runCampaign,
+	runDoctor,
 	type Store,
 	VERDICTS,
 	VERSION,
@@ -35,6 +41,7 @@ import { Command } from "commander";
 import pc from "picocolors";
 import { annotateSession, LABELS } from "./annotate.ts";
 import { formatDuration, renderStatus } from "./display.ts";
+import { renderChecks, renderModels } from "./doctor.ts";
 
 const pct = (x: number) => `${(x * 100).toFixed(1)} %`;
 
@@ -46,10 +53,29 @@ function formatRate({ rate, interval, compromised, exposed }: CompromiseRate) {
 }
 
 // The base lives in HIJACKBENCH_DATA: /data in Docker, ./data otherwise.
+const basePath = () =>
+	join(process.env.HIJACKBENCH_DATA ?? "data", "hijackbench.db");
+
 function openBase() {
-	const dir = process.env.HIJACKBENCH_DATA ?? "data";
-	mkdirSync(dir, { recursive: true });
-	return openStore(join(dir, "hijackbench.db"));
+	mkdirSync(process.env.HIJACKBENCH_DATA ?? "data", { recursive: true });
+	return openStore(basePath());
+}
+
+// Out of a campaign, Ollama is found through OLLAMA_URL.
+const ollamaUrl = () => process.env.OLLAMA_URL ?? DEFAULT_OLLAMA_URL;
+
+// The GPU as nvidia-smi names it. Undefined in Docker, where it is absent.
+function gpuName(): string | undefined {
+	try {
+		const out = execFileSync(
+			"nvidia-smi",
+			["--query-gpu=name", "--format=csv,noheader"],
+			{ encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] },
+		);
+		return out.trim().split("\n")[0] || undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 // One line per event: what a log file or a pipe gets.
@@ -278,6 +304,79 @@ const program = new Command()
 	)
 	.version(VERSION)
 	.showHelpAfterError();
+
+program
+	.command("doctor")
+	.description(
+		"Check the install before a campaign: base, Ollama, models, thermal probe, GPU",
+	)
+	.argument("[file]", "a campaign file, to check it and its models too")
+	.addHelpText(
+		"after",
+		`
+Loads no model: it never heats the card.
+Examples:
+  $ hijackbench doctor
+  $ hijackbench doctor campaigns/attacked-v0.yaml
+
+Exit codes: 0 when ready, warnings included, 1 when something must be fixed.`,
+	)
+	.action(async (file: string | undefined) => {
+		let base: DoctorInput["base"];
+		try {
+			const store = openBase();
+			base = { path: basePath(), campaigns: store.listCampaigns().length };
+			store.close();
+		} catch (error) {
+			base = { path: basePath(), error: (error as Error).message };
+		}
+		let campaign: DoctorInput["campaign"];
+		if (file)
+			try {
+				campaign = { source: file, config: loadCampaign(file) };
+			} catch (error) {
+				campaign = { source: file, error: (error as Error).message };
+			}
+		const config =
+			campaign && "config" in campaign ? campaign.config : undefined;
+		const name = gpuName();
+		const checks = await runDoctor({
+			version: VERSION,
+			base,
+			ollama: createOllamaClient(config?.ollama.baseUrl ?? ollamaUrl()),
+			vramFile: vramFile(),
+			...(name && { gpuName: name }),
+			...(campaign && { campaign }),
+			thresholds: config?.thermal ?? DEFAULT_THRESHOLDS,
+		});
+		console.log(renderChecks(checks));
+		if (checks.some((c) => c.status === "fail")) process.exitCode = 1;
+	});
+
+program
+	.command("models")
+	.description("List the Ollama models, their tool support and what is loaded")
+	.addHelpText(
+		"after",
+		`
+A campaign needs models with tool support. Ollama is found through OLLAMA_URL,
+${DEFAULT_OLLAMA_URL} by default.`,
+	)
+	.action(async () => {
+		const ollama = createOllamaClient(ollamaUrl());
+		try {
+			const [installed, loaded] = await Promise.all([
+				ollama.installed(),
+				ollama.loaded(),
+			]);
+			console.log(renderModels(installed, loaded));
+		} catch (error) {
+			console.error(
+				`${(error as Error).message}. Start Ollama, or point OLLAMA_URL to it.`,
+			);
+			process.exitCode = 1;
+		}
+	});
 
 program
 	.command("run")
@@ -577,6 +676,7 @@ program.addHelpText(
 	"after",
 	`
 Examples:
+  $ hijackbench doctor campaigns/reference-v0.yaml
   $ hijackbench run campaigns/reference-v0.yaml
   $ hijackbench status
   $ hijackbench resume reference-v0
