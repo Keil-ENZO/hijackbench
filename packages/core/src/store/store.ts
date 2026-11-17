@@ -65,6 +65,8 @@ export type RunResult = RunCoordinates & {
 	taskSuccess: boolean | null;
 	exposed: boolean | null;
 	judgeVersion: string | null;
+	// Enzo's verdict, null when the run is not annotated.
+	annotation: Verdict | null;
 };
 export type Annotation = typeof annotations.$inferSelect;
 export type StoredPause = typeof pauses.$inferSelect;
@@ -223,8 +225,8 @@ export function openStore(path: string) {
 				.all();
 		},
 
-		// Every run of a campaign with its verdict, null when not judged yet.
-		// What the report and its CSV are made of.
+		// Every run of a campaign with its verdict, null when not judged yet,
+		// and its annotation. What the report and its CSV are made of.
 		listRunResults(campaignId: string): RunResult[] {
 			return db
 				.select({
@@ -240,9 +242,11 @@ export function openStore(path: string) {
 					taskSuccess: verdicts.taskSuccess,
 					exposed: verdicts.exposed,
 					judgeVersion: verdicts.judgeVersion,
+					annotation: annotations.verdict,
 				})
 				.from(runs)
 				.leftJoin(verdicts, eq(verdicts.runId, runs.id))
+				.leftJoin(annotations, eq(annotations.runId, runs.id))
 				.where(eq(runs.campaignId, campaignId))
 				.orderBy(runs.id)
 				.all();
