@@ -24,6 +24,7 @@ import {
 	judgeCampaign,
 	loadCampaign,
 	loadReport,
+	OllamaUnreachableError,
 	openSession,
 	openStore,
 	type RunnerEvent,
@@ -33,6 +34,7 @@ import {
 	runCampaign,
 	runDoctor,
 	type Store,
+	ThermalReadError,
 	VERDICTS,
 	VERSION,
 } from "@hijackbench/core";
@@ -277,7 +279,7 @@ async function execute(config: CampaignConfig) {
 				}),
 			onEvent: bar ? bar.onEvent : printLine,
 		});
-		if (summary.stopped) process.exitCode = 130;
+		if (summary.stopped) process.exitCode = EXIT.interrupted;
 	} finally {
 		bar?.close();
 		process.off("SIGINT", onSignal);
@@ -286,15 +288,40 @@ async function execute(config: CampaignConfig) {
 	}
 }
 
-function fail(error: unknown): never {
-	if (
-		error instanceof CampaignConfigError ||
-		error instanceof CampaignMismatchError
-	) {
-		console.error(error.message);
-		process.exit(1);
+// Exit codes, the same for every command.
+const EXIT = { ok: 0, failure: 1, usage: 2, interrupted: 130 } as const;
+
+const EXIT_CODES = `
+Exit codes:
+  0    success
+  1    failure: a check failed, a campaign or file is missing, an error
+  2    usage error: unknown command or option, missing argument
+  130  a campaign stopped by Ctrl+C or the stop command`;
+
+// Errors the user can fix: the message says how.
+const EXPECTED = [
+	CampaignConfigError,
+	CampaignMismatchError,
+	AnnotationError,
+	OllamaUnreachableError,
+	ThermalReadError,
+];
+
+// Never a stack trace for the user: the message, and how to get the
+// stack when it is a bug. HIJACKBENCH_DEBUG=1 shows it.
+function reportError(error: unknown): never {
+	const debug = Boolean(process.env.HIJACKBENCH_DEBUG);
+	const message = error instanceof Error ? error.message : String(error);
+	if (EXPECTED.some((type) => error instanceof type)) console.error(message);
+	else {
+		console.error(`Error: ${message}`);
+		if (!debug)
+			console.error(
+				"If this looks like a bug, run again with HIJACKBENCH_DEBUG=1 for the details.",
+			);
 	}
-	throw error;
+	if (debug && error instanceof Error) console.error(error.stack);
+	process.exit(EXIT.failure);
 }
 
 const program = new Command()
@@ -303,7 +330,12 @@ const program = new Command()
 		"Measure how well tool-using AI agents resist indirect prompt injection.",
 	)
 	.version(VERSION)
-	.showHelpAfterError();
+	.showHelpAfterError()
+	// Inherited by every command below: help and version exit 0, a usage
+	// error exits 2.
+	.exitOverride((error) =>
+		process.exit(error.exitCode === 0 ? EXIT.ok : EXIT.usage),
+	);
 
 program
 	.command("doctor")
@@ -311,6 +343,7 @@ program
 		"Check the install before a campaign: base, Ollama, models, thermal probe, GPU",
 	)
 	.argument("[file]", "a campaign file, to check it and its models too")
+	.option("--json", "print the checks as JSON, for scripts")
 	.addHelpText(
 		"after",
 		`
@@ -318,10 +351,11 @@ Loads no model: it never heats the card.
 Examples:
   $ hijackbench doctor
   $ hijackbench doctor campaigns/attacked-v0.yaml
+  $ hijackbench doctor --json
 
 Exit codes: 0 when ready, warnings included, 1 when something must be fixed.`,
 	)
-	.action(async (file: string | undefined) => {
+	.action(async (file: string | undefined, options: { json?: boolean }) => {
 		let base: DoctorInput["base"];
 		try {
 			const store = openBase();
@@ -349,32 +383,43 @@ Exit codes: 0 when ready, warnings included, 1 when something must be fixed.`,
 			...(campaign && { campaign }),
 			thresholds: config?.thermal ?? DEFAULT_THRESHOLDS,
 		});
-		console.log(renderChecks(checks));
-		if (checks.some((c) => c.status === "fail")) process.exitCode = 1;
+		const ready = !checks.some((c) => c.status === "fail");
+		console.log(
+			options.json ? JSON.stringify({ ready, checks }) : renderChecks(checks),
+		);
+		if (!ready) process.exitCode = EXIT.failure;
 	});
 
 program
 	.command("models")
 	.description("List the Ollama models, their tool support and what is loaded")
+	.option("--json", "print the models as JSON, for scripts")
 	.addHelpText(
 		"after",
 		`
 A campaign needs models with tool support. Ollama is found through OLLAMA_URL,
-${DEFAULT_OLLAMA_URL} by default.`,
+${DEFAULT_OLLAMA_URL} by default.
+Examples:
+  $ hijackbench models
+  $ OLLAMA_URL=http://gpu-box:11434 hijackbench models --json`,
 	)
-	.action(async () => {
+	.action(async (options: { json?: boolean }) => {
 		const ollama = createOllamaClient(ollamaUrl());
 		try {
 			const [installed, loaded] = await Promise.all([
 				ollama.installed(),
 				ollama.loaded(),
 			]);
-			console.log(renderModels(installed, loaded));
+			console.log(
+				options.json
+					? JSON.stringify({ installed, loaded })
+					: renderModels(installed, loaded),
+			);
 		} catch (error) {
 			console.error(
 				`${(error as Error).message}. Start Ollama, or point OLLAMA_URL to it.`,
 			);
-			process.exitCode = 1;
+			process.exitCode = EXIT.failure;
 		}
 	});
 
@@ -384,31 +429,39 @@ program
 	.argument("<file>", "campaign file, e.g. campaigns/reference-v0.yaml")
 	.addHelpText(
 		"after",
-		"\nIf the campaign is already in the base with the same config, its missing runs are run.",
+		`
+If the campaign is already in the base with the same config, its missing
+runs are run. Ctrl+C or the stop command stops it cleanly. In a terminal, a
+progress bar; otherwise one line per run, ready for a log file.
+Examples:
+  $ hijackbench doctor campaigns/reference-v0.yaml
+  $ hijackbench run campaigns/reference-v0.yaml
+  $ hijackbench run campaigns/reference-v0.yaml > reference-v0.log`,
 	)
 	.action(async (file: string) => {
-		let config: CampaignConfig;
-		try {
-			config = loadCampaign(file);
-		} catch (error) {
-			fail(error);
-		}
-		await execute(config).catch(fail);
+		await execute(loadCampaign(file));
 	});
 
 program
 	.command("resume")
 	.description("Resume a stopped campaign, with the config stored in the base")
 	.argument("<id>", "campaign id, as written in its file")
+	.addHelpText(
+		"after",
+		`
+Runs only what is missing. A run cut by a stop is run again.
+Example:
+  $ hijackbench resume reference-v0`,
+	)
 	.action(async (id: string) => {
 		const store = openBase();
 		const campaign = store.getCampaign(id);
 		store.close();
 		if (!campaign) {
 			console.error(`No campaign "${id}" in the base. Start it with run.`);
-			process.exit(1);
+			process.exit(EXIT.failure);
 		}
-		await execute(CampaignConfigSchema.parse(campaign.config)).catch(fail);
+		await execute(CampaignConfigSchema.parse(campaign.config));
 	});
 
 program
@@ -425,8 +478,11 @@ program
 		"after",
 		`
 The run in flight is dropped, never saved: resume runs it again.
+Examples:
+  $ hijackbench stop
+  $ hijackbench stop "VRAM at 94 °C"
 From another machine:
-  $ ssh enzo@homelab-01 '~/Developer/hijackbench/bin/hijackbench stop'`,
+  $ ssh t3@homelab-01 '~/Developer/hijackbench/bin/hijackbench stop'`,
 	)
 	.action((reason: string) => {
 		const store = openBase();
@@ -462,7 +518,7 @@ Examples:
   $ hijackbench status reference-v0 --watch
   $ hijackbench status reference-v0 --json
 From another machine:
-  $ ssh enzo@homelab-01 '~/Developer/hijackbench/bin/hijackbench status'
+  $ ssh t3@homelab-01 '~/Developer/hijackbench/bin/hijackbench status'
 
 Exit codes: 0 when the campaign is found, 1 when it is not.`,
 	)
@@ -479,7 +535,7 @@ Exit codes: 0 when the campaign is found, 1 when it is not.`,
 						: Number(options.watch);
 			if (every !== undefined && !(every >= 1)) {
 				console.error("--watch takes a number of seconds, 1 or more.");
-				process.exit(1);
+				process.exit(EXIT.failure);
 			}
 			const store = openBase();
 			process.once("SIGINT", () => {
@@ -496,7 +552,7 @@ Exit codes: 0 when the campaign is found, 1 when it is not.`,
 								? `No campaign "${campaignId}" in the base.`
 								: "No campaign in the base yet. Start one with: hijackbench run <file>",
 						);
-						process.exitCode = 1;
+						process.exitCode = EXIT.failure;
 						return;
 					}
 					const vram = vramNow();
@@ -526,18 +582,44 @@ program
 		"Give every run of a campaign its verdict, again if judged before",
 	)
 	.argument("<id>", "campaign id, as written in its file")
-	.action((id: string) => {
+	.option("--json", "print the verdict counts and rates as JSON, for scripts")
+	.addHelpText(
+		"after",
+		`
+Judging is deterministic: the same runs get the same verdicts. Run it again
+after a change of the judge's rules.
+Examples:
+  $ hijackbench judge attacked-v0
+  $ hijackbench judge attacked-v0 --json`,
+	)
+	.action((id: string, options: { json?: boolean }) => {
 		const store = openBase();
 		try {
 			if (!store.getCampaign(id)) {
 				console.error(`No campaign "${id}" in the base.`);
-				process.exit(1);
+				process.exit(EXIT.failure);
 			}
 			const { judged, counts, unexposed } = judgeCampaign(store, id);
-			console.log(`${judged} runs judged, judge v${JUDGE_VERSION}.`);
 			const rates = new Map(
 				compromiseRates(store.listVerdicts(id)).map((r) => [r.model, r]),
 			);
+			if (options.json) {
+				console.log(
+					JSON.stringify({
+						campaignId: id,
+						judged,
+						judgeVersion: JUDGE_VERSION,
+						models: Object.entries(counts).map(([model, verdicts]) => ({
+							model,
+							verdicts,
+							unexposed: rates.has(model) ? (unexposed[model] ?? 0) : null,
+							compromiseRate: rates.get(model) ?? null,
+						})),
+					}),
+				);
+				return;
+			}
+			console.log(`${judged} runs judged, judge v${JUDGE_VERSION}.`);
 			for (const [model, byVerdict] of Object.entries(counts)) {
 				console.log(`\n${model}`);
 				for (const verdict of VERDICTS)
@@ -570,13 +652,17 @@ program
 Blind: the judge's verdict shows only after yours. Every answer is saved
 at once. Run the same command again to resume: the same size and seed draw
 the same runs, and the ones annotated are skipped.
-Needs a terminal. From another machine:
-  $ ssh -t enzo@homelab-01 '~/Developer/hijackbench/bin/hijackbench annotate attacked-v0'`,
+Read docs/annotation-guide.md first. Needs a terminal.
+Examples:
+  $ hijackbench annotate attacked-v0
+  $ hijackbench annotate attacked-v0 -n 60
+From another machine:
+  $ ssh -t t3@homelab-01 '~/Developer/hijackbench/bin/hijackbench annotate attacked-v0'`,
 	)
 	.action(async (id: string, options: { size: string; seed?: string }) => {
 		if (!process.stdin.isTTY || !process.stdout.isTTY) {
 			console.error("annotate needs a terminal. Over SSH, use ssh -t.");
-			process.exit(1);
+			process.exit(EXIT.failure);
 		}
 		const store = openBase();
 		const rl = createInterface({
@@ -610,10 +696,6 @@ Needs a terminal. From another machine:
 			console.log(
 				`\n${result.annotated} annotated, ${result.agreed} agreeing with the judge, ${result.skipped} skipped, ${result.left} left in the sample.`,
 			);
-		} catch (error) {
-			if (!(error instanceof AnnotationError)) throw error;
-			console.error(error.message);
-			process.exitCode = 1;
 		} finally {
 			rl.close();
 			store.close();
@@ -653,7 +735,7 @@ Examples:
 				built = loadReport(store, id, options.reference);
 			} catch (error) {
 				console.error(error instanceof Error ? error.message : error);
-				process.exit(1);
+				process.exit(EXIT.failure);
 			} finally {
 				store.close();
 			}
@@ -683,7 +765,9 @@ Examples:
   $ hijackbench judge reference-v0
   $ hijackbench report attacked-v0 -r reference-v0
   $ hijackbench annotate attacked-v0
-  $ hijackbench stop "VRAM at 94 °C"`,
+  $ hijackbench stop "VRAM at 94 °C"
+${EXIT_CODES}`,
 );
 
-await program.parseAsync();
+process.on("unhandledRejection", reportError);
+await program.parseAsync().catch(reportError);
