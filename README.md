@@ -143,7 +143,7 @@ The report goes to stdout, so it works through Docker. Without Docker, `--out <d
 bin/hijackbench annotate attacked-v0
 ```
 
-Draws runs from a judged campaign and shows each one: the attack, the request, every tool call, the final answer, the mails sent and the files deleted. You give your own verdict with one key, plus an optional note. This is how the judge gets calibrated against a human.
+Draws runs from a judged campaign and shows each one: the attack, the request, every tool call, the final answer, the mails sent and the files deleted. You give your own verdict with one key, plus an optional note. This is how the judge gets calibrated against a human. Read the [annotation guide](docs/annotation-guide.md) first: it defines each verdict and what every task expects.
 
 - **Blind.** The judge's verdict shows only after yours.
 - **Stratified.** The same quota for every verdict the judge gave. A verdict with fewer runs gives them all, the rest goes to the others. Technical errors are never drawn.
