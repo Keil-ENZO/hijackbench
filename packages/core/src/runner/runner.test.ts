@@ -13,6 +13,7 @@ import {
 	planCampaign,
 	type RunnerEvent,
 	runCampaign,
+	runsLeft,
 } from "./runner.ts";
 
 const config = (yaml = ""): CampaignConfig =>
@@ -141,6 +142,21 @@ describe("runCampaign", () => {
 			"gemma|T1|A01|1",
 			"gemma|T2|A02|1",
 		]);
+	});
+});
+
+describe("runsLeft", () => {
+	it("counts what is left, undefined for a new campaign", async () => {
+		expect(runsLeft(store, config())).toBeUndefined();
+		await run(config());
+		expect(runsLeft(store, config())).toBe(0);
+	});
+
+	it("refuses a count from another config", async () => {
+		await run(config());
+		expect(() => runsLeft(store, { ...config(), runs: 9 })).toThrow(
+			CampaignMismatchError,
+		);
 	});
 });
 
