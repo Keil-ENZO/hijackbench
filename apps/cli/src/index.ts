@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline/promises";
 import {
+	AnnotationError,
 	type CampaignConfig,
 	CampaignConfigError,
 	CampaignConfigSchema,
@@ -17,6 +19,7 @@ import {
 	judgeCampaign,
 	loadCampaign,
 	loadReport,
+	openSession,
 	openStore,
 	type RunnerEvent,
 	readVram,
@@ -30,6 +33,7 @@ import {
 import cliProgress from "cli-progress";
 import { Command } from "commander";
 import pc from "picocolors";
+import { annotateSession, LABELS } from "./annotate.ts";
 import { formatDuration, renderStatus } from "./display.ts";
 
 const pct = (x: number) => `${(x * 100).toFixed(1)} %`;
@@ -450,6 +454,74 @@ program
 	});
 
 program
+	.command("annotate")
+	.description(
+		"Show runs drawn from a campaign and record your own verdict, to calibrate the judge",
+	)
+	.argument("<id>", "campaign id, e.g. attacked-v0")
+	.option(
+		"-n, --size <runs>",
+		"runs to draw, the same quota per verdict",
+		"100",
+	)
+	.option("--seed <text>", "seed of the draw, the campaign id by default")
+	.addHelpText(
+		"after",
+		`
+Blind: the judge's verdict shows only after yours. Every answer is saved
+at once. Run the same command again to resume: the same size and seed draw
+the same runs, and the ones annotated are skipped.
+Needs a terminal. From another machine:
+  $ ssh -t enzo@homelab-01 '~/Developer/hijackbench/bin/hijackbench annotate attacked-v0'`,
+	)
+	.action(async (id: string, options: { size: string; seed?: string }) => {
+		if (!process.stdin.isTTY || !process.stdout.isTTY) {
+			console.error("annotate needs a terminal. Over SSH, use ssh -t.");
+			process.exit(1);
+		}
+		const store = openBase();
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		try {
+			const session = openSession(store, id, {
+				size: Number(options.size),
+				...(options.seed !== undefined && { seed: options.seed }),
+			});
+			const quotas = Object.entries(session.quotas)
+				.map(([verdict, n]) => `${n} ${LABELS[verdict as keyof typeof LABELS]}`)
+				.join(", ");
+			console.log(
+				`${session.sample.length} runs drawn from ${id}: ${quotas}. ${session.sample.length - session.pending.length} annotated, ${session.pending.length} left.`,
+			);
+			if (session.pending.length === 0) return;
+			// Ctrl+C ends the session like q: what is answered is saved.
+			const quit = new Promise<"quit">((resolve) =>
+				rl.once("SIGINT", () => resolve("quit")),
+			);
+			const result = await Promise.race([
+				annotateSession(store, session, rl),
+				quit,
+			]);
+			if (result === "quit") {
+				console.log("\nStopped. Your answers are saved.");
+				return;
+			}
+			console.log(
+				`\n${result.annotated} annotated, ${result.agreed} agreeing with the judge, ${result.skipped} skipped, ${result.left} left in the sample.`,
+			);
+		} catch (error) {
+			if (!(error instanceof AnnotationError)) throw error;
+			console.error(error.message);
+			process.exitCode = 1;
+		} finally {
+			rl.close();
+			store.close();
+		}
+	});
+
+program
 	.command("report")
 	.description(
 		"Write the results report in Markdown, or the raw CSV, from an attacked campaign and its reference",
@@ -510,6 +582,7 @@ Examples:
   $ hijackbench resume reference-v0
   $ hijackbench judge reference-v0
   $ hijackbench report attacked-v0 -r reference-v0
+  $ hijackbench annotate attacked-v0
   $ hijackbench stop "VRAM at 94 °C"`,
 );
 

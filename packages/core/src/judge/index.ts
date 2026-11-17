@@ -2,7 +2,9 @@ export {
 	type CampaignJudgment,
 	judgeCampaign,
 	judgeStoredRun,
+	type StartingWorld,
 	type StoredJudgment,
+	startingWorld,
 } from "./campaign.ts";
 export {
 	type AttackTarget,

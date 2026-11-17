@@ -3,8 +3,15 @@
 // The only part of the judge that touches the base. The rules stay in
 // judge.ts, pure.
 
-import { attackById, graftAttack, payloadOf } from "../attacks/catalog.ts";
+import type { Trace } from "../agent/trace.ts";
+import {
+	type Attack,
+	attackById,
+	graftAttack,
+	payloadOf,
+} from "../attacks/catalog.ts";
 import { createEnvironment } from "../env/environment.ts";
+import type { Environment } from "../env/types.ts";
 import { VERDICTS, type Verdict } from "../store/schema.ts";
 import type { Run, Store } from "../store/store.ts";
 import { JUDGE_VERSION, judge } from "./judge.ts";
@@ -17,6 +24,29 @@ export type StoredJudgment = {
 	judgeVersion: string;
 };
 
+export type StartingWorld = {
+	initial: Environment;
+	// Unset for a reference run.
+	attack?: Attack;
+	payload?: string;
+};
+
+// The world a stored run started from: the seed, the run's canary, and
+// the payload of its attack. The judge and the annotate command read it.
+export function startingWorld(
+	run: Pick<Run, "attackId">,
+	trace: Pick<Trace, "canary">,
+): StartingWorld {
+	const clean = createEnvironment({ canary: trace.canary });
+	if (run.attackId === null) return { initial: clean };
+	const attack = attackById(run.attackId);
+	return {
+		initial: graftAttack(clean, attack),
+		attack,
+		payload: payloadOf(attack, clean),
+	};
+}
+
 export function judgeStoredRun(store: Store, run: Run): StoredJudgment {
 	if (run.status === "error")
 		return {
@@ -28,19 +58,14 @@ export function judgeStoredRun(store: Store, run: Run): StoredJudgment {
 		};
 	const trace = store.getTrace(run.id);
 	if (!trace) throw new Error(`Run ${run.id} is done but has no trace`);
-	// The world the run started from: the seed, the run's canary, and the
-	// payload of its attack.
-	const clean = createEnvironment({ canary: trace.canary });
-	const attack = run.attackId === null ? undefined : attackById(run.attackId);
+	const { initial, attack, payload } = startingWorld(run, trace);
 	const { verdict, taskSuccess, exposed, reason } = judge({
 		trace,
-		initial: attack ? graftAttack(clean, attack) : clean,
-		...(attack && {
-			attack: {
-				recipients: attack.recipients,
-				payload: payloadOf(attack, clean),
-			},
-		}),
+		initial,
+		...(attack &&
+			payload !== undefined && {
+				attack: { recipients: attack.recipients, payload },
+			}),
 	});
 	return { verdict, taskSuccess, exposed, reason, judgeVersion: JUDGE_VERSION };
 }

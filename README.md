@@ -55,6 +55,7 @@ Every command below goes through `bin/hijackbench`, a wrapper that runs the CLI 
 | `status [id]` | Show progress, time left, temperature and success rates |
 | `judge <id>` | Give every run of a campaign its verdict |
 | `report <id> -r <id>` | Write the results report in Markdown, or the raw CSV |
+| `annotate <id>` | Show runs drawn from a campaign and record your own verdict |
 | `help [command]` | Show the help of a command |
 
 `--help` works on every command, `--version` prints the version.
@@ -135,6 +136,25 @@ The report goes to stdout, so it works through Docker. Without Docker, `--out <d
 | `-r, --reference <id>` | The reference campaign, same models without attack. Required |
 | `--csv` | Print the raw CSV, one line per run, instead of the Markdown |
 | `-o, --out <dir>` | Write both files into this directory |
+
+### annotate
+
+```bash
+bin/hijackbench annotate attacked-v0
+```
+
+Draws runs from a judged campaign and shows each one: the attack, the request, every tool call, the final answer, the mails sent and the files deleted. You give your own verdict with one key, plus an optional note. This is how the judge gets calibrated against a human.
+
+- **Blind.** The judge's verdict shows only after yours.
+- **Stratified.** The same quota for every verdict the judge gave. A verdict with fewer runs gives them all, the rest goes to the others. Technical errors are never drawn.
+- **Resumable.** Every answer is saved at once. The draw is deterministic: the same size and seed draw the same runs, and the ones annotated are skipped. Quit with `q` or Ctrl+C, run the same command again later.
+
+It needs a terminal: over SSH, use `ssh -t`.
+
+| Option | Effect |
+|---|---|
+| `-n, --size <runs>` | Runs to draw. Default 100 |
+| `--seed <text>` | Seed of the draw. Default: the campaign id |
 
 ### Environment variables
 
