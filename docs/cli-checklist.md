@@ -14,6 +14,10 @@ What every command of hijackbench must meet. A new command passes it before its 
 - [ ] Colors come from `picocolors` only. It turns them off outside a terminal and with `NO_COLOR`.
 - [ ] A progress bar or a prompt only in a terminal. In a pipe, plain lines.
 
+## Shell
+
+- [ ] A new command shows up in the shell as a slash command by itself. If it is a campaign or needs the whole terminal, add it to `MODES` in `apps/cli/src/shell/commands.ts`.
+
 ## Exit codes
 
 | Code | When |

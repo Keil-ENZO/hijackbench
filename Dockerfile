@@ -27,4 +27,4 @@ RUN mkdir /data && chown node:node /data \
 USER node
 VOLUME /data
 ENTRYPOINT ["hijackbench"]
-CMD ["--help"]
+# No argument: the shell in a terminal, the help otherwise.
