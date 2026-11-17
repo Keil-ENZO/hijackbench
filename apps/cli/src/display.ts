@@ -60,10 +60,41 @@ function table(rows: string[][]): string {
 		.join("\n");
 }
 
+// Cases as columns reads best, until it no longer fits: then cases go
+// down the rows and models across, 15 attacks or 8 tasks fit either way.
+function successTable(status: CampaignStatus, width: number): string {
+	const cell = (model: CampaignStatus["models"][number], name: string) => {
+		const tally = model.cases[name];
+		return tally ? rate(tally) : "-";
+	};
+	const wide = table([
+		["", ...status.cases, "all", ""],
+		...status.models.map((model) => [
+			model.model,
+			...status.cases.map((name) => cell(model, name)),
+			rate(model),
+			percent(model.success, model.judged),
+		]),
+	]);
+	const widest = Math.max(...wide.split("\n").map((line) => line.length));
+	if (widest <= width) return wide;
+	return table([
+		["", ...status.models.map((m) => m.model)],
+		...status.cases.map((name) => [
+			name,
+			...status.models.map((model) => cell(model, name)),
+		]),
+		["all", ...status.models.map((model) => rate(model))],
+		["", ...status.models.map((m) => percent(m.success, m.judged))],
+	]);
+}
+
 export function renderStatus(
 	status: CampaignStatus,
 	vram: number | undefined,
 	thresholds: Thresholds,
+	// The terminal's width. Unknown in a pipe: the wide table, as before.
+	width = Number.POSITIVE_INFINITY,
 ): string {
 	const lines = [`${pc.bold(status.id)}  ${status.name}`];
 
@@ -89,18 +120,7 @@ export function renderStatus(
 	lines.push(
 		"",
 		"Tasks succeeded, out of the runs judged:",
-		table([
-			["", ...status.cases, "all", ""],
-			...status.models.map((model) => [
-				model.model,
-				...status.cases.map((name) => {
-					const tally = model.cases[name];
-					return tally ? rate(tally) : "-";
-				}),
-				rate(model),
-				percent(model.success, model.judged),
-			]),
-		]),
+		successTable(status, width),
 	);
 
 	if (status.errors > 0)

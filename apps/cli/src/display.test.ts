@@ -64,6 +64,13 @@ describe("renderStatus", () => {
 		expect(text).toContain("hijackbench resume ref");
 	});
 
+	it("turns the table when it does not fit: cases down, models across", () => {
+		const text = renderStatus(status(), 71, thresholds, 20);
+		expect(text).toMatch(/\s+gemma\s+llama/);
+		expect(text).toMatch(/^all\s+2\/3\s+-$/m);
+		expect(text).toMatch(/^\s+67 %\s+-$/m);
+	});
+
 	it("shows the run in flight", () => {
 		const text = renderStatus(
 			status({

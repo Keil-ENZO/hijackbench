@@ -1,8 +1,9 @@
-// The shell's screen, in Ink: the log of what ran, then the live panel,
-// the prompt and the command menu. No JSX: Node runs these sources as
+// The shell's screen, in Ink, full screen like Claude Code: the live
+// panel at the top, the log of what ran in blocks, then the prompt in its
+// frame, the menu and a line of keys. No JSX: Node runs these sources as
 // they are, and its type stripping does not transform JSX.
 
-import { Box, Static, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import pc from "picocolors";
 import { createElement as h, useEffect, useState } from "react";
 import {
@@ -12,8 +13,7 @@ import {
 	type SlashCommand,
 } from "./commands.ts";
 import { type Job, startJob, stopJob } from "./jobs.ts";
-
-export type Entry = { id: number; text: string };
+import { type Block, layoutLog } from "./log.ts";
 
 // Lines of the menu on screen at once.
 const MENU_LINES = 10;
@@ -21,15 +21,44 @@ const MENU_LINES = 10;
 // What outlives one mount of the app: annotate unmounts it to take the
 // terminal, and the log, the history and the jobs must come back.
 export class ShellState {
-	log: Entry[] = [];
-	// Entries already printed above the screen, never printed twice.
-	printed = 0;
+	blocks: Block[] = [];
 	history: string[] = [];
 	jobs = new Map<number, Job>();
 	private listeners = new Set<() => void>();
 
-	print(text: string) {
-		this.log.push({ id: this.log.length, text });
+	// A line or a few, outside any command.
+	note(text: string) {
+		this.blocks.push({
+			id: this.blocks.length,
+			kind: "note",
+			title: "",
+			lines: text.split("\n"),
+			state: "ok",
+		});
+		this.changed();
+	}
+
+	start(title: string): Block {
+		const block: Block = {
+			id: this.blocks.length,
+			kind: "command",
+			title,
+			lines: [],
+			state: "running",
+		};
+		this.blocks.push(block);
+		this.changed();
+		return block;
+	}
+
+	append(block: Block, text: string) {
+		block.lines.push(text);
+		this.changed();
+	}
+
+	finish(block: Block, code: number | null) {
+		block.state = code === 0 ? "ok" : "failed";
+		block.code = code;
 		this.changed();
 	}
 
@@ -70,10 +99,13 @@ const help = (commands: readonly SlashCommand[]) => {
 	return commands
 		.map(
 			(c) =>
-				`  ${`/${c.name} ${c.usage}`.trimEnd().padEnd(width)}  ${pc.dim(c.description)}`,
+				`${`/${c.name} ${c.usage}`.trimEnd().padEnd(width)}  ${pc.dim(c.description)}`,
 		)
 		.join("\n");
 };
+
+const KEYS =
+	"/ commands · Tab completes · ↑↓ history · PgUp PgDn scroll · Ctrl+C quits";
 
 export function App({
 	commands,
@@ -86,7 +118,14 @@ export function App({
 	argumentsOf,
 }: AppProps) {
 	const { exit } = useApp();
-	const [startAt] = useState(() => state.printed);
+	// A terminal in practice: it has a size.
+	const stdout = useStdout().stdout as NodeJS.WriteStream;
+	const [size, setSize] = useState(() => ({
+		columns: stdout.columns || 80,
+		rows: stdout.rows || 24,
+	}));
+	// Lines scrolled up from the bottom of the log, 0 to follow it.
+	const [scroll, setScroll] = useState(0);
 	const [, setTick] = useState(0);
 	const [lines, setLines] = useState(panel);
 	const [input, setInput] = useState("");
@@ -99,15 +138,23 @@ export function App({
 
 	useEffect(() => state.subscribe(() => setTick((t) => t + 1)), [state]);
 	useEffect(() => {
+		const resize = () =>
+			setSize({ columns: stdout.columns || 80, rows: stdout.rows || 24 });
+		stdout.on("resize", resize);
+		return () => {
+			stdout.off("resize", resize);
+		};
+	}, [stdout]);
+	useEffect(() => {
 		const timer = setInterval(() => setLines(panel()), refreshMs);
 		return () => clearInterval(timer);
 	}, [panel, refreshMs]);
 
-	const menu = complete(input, commands, argumentsOf);
+	// No menu while browsing the history: the arrows stay on it.
+	const menu = browsing === null ? complete(input, commands, argumentsOf) : [];
 	const campaigns = [...state.jobs.values()].filter((j) => j.campaign);
 
 	const leave = (action: ShellAction) => {
-		state.printed = state.log.length;
 		onAction(action);
 		exit();
 	};
@@ -125,32 +172,38 @@ export function App({
 		setBrowsing(null);
 		setSelected(0);
 		setPicked(false);
+		setScroll(0);
 		if (!line.trim()) return;
 		if (state.history.at(-1) !== line) state.history.push(line);
-		state.print(pc.dim(`> ${line}`));
 		const parsed = parseLine(line, commands);
 		if (parsed.kind === "empty") return;
 		if (parsed.kind === "unknown") {
-			state.print(`Unknown command /${parsed.name}. /help lists them.`);
+			state.note(pc.red(`Unknown command /${parsed.name}. /help lists them.`));
 			return;
 		}
 		const { command, args } = parsed;
-		if (command.name === "help") return state.print(help(commands));
+		if (command.name === "help") {
+			const block = state.start(line);
+			state.append(block, help(commands));
+			state.finish(block, 0);
+			return;
+		}
 		if (command.name === "quit") return quit();
 		if (command.mode === "terminal")
 			return leave({ type: "terminal", line, args: [command.name, ...args] });
+		const block = state.start(line);
 		const job = launch(line, [command.name, ...args], {
 			campaign: command.mode === "campaign",
 			color,
-			onLine: (text) => state.print(text),
+			// The log's indent and padding take 6 columns.
+			columns: size.columns - 6,
+			onLine: (text) => state.append(block, text),
 		});
 		state.jobs.set(job.id, job);
 		state.changed();
 		void job.done.then((code) => {
 			state.jobs.delete(job.id);
-			if (code !== 0)
-				state.print(pc.red(`✗ ${line} exited with code ${code ?? "?"}`));
-			else state.changed();
+			state.finish(block, code);
 			setLines(panel());
 		});
 	};
@@ -159,7 +212,7 @@ export function App({
 		if (confirming) {
 			setConfirming(false);
 			if (key.toLowerCase() !== "y") return;
-			state.print("Stopping the campaign cleanly…");
+			state.note(pc.yellow("Stopping the campaign cleanly…"));
 			void Promise.all(campaigns.map(stopJob)).then(() => {
 				for (const job of state.jobs.values()) job.child.kill();
 				leave({ type: "quit" });
@@ -181,6 +234,14 @@ export function App({
 			if (choice.ready) return execute(choice.text);
 			setInput(choice.text);
 			setSelected(0);
+			return;
+		}
+		if (special.pageUp || special.pageDown) {
+			const page = Math.max(logHeight - 2, 1);
+			const most = Math.max(log.length - logHeight, 0);
+			setScroll((s) =>
+				Math.min(Math.max(s + (special.pageUp ? page : -page), 0), most),
+			);
 			return;
 		}
 		if (special.tab) {
@@ -245,50 +306,84 @@ export function App({
 		}
 	});
 
-	const running = [...state.jobs.values()];
+	// The screen, top to bottom. The log takes what the rest leaves.
+	const shown = menu.slice(0, MENU_LINES);
+	const fixed =
+		lines.length +
+		2 +
+		3 +
+		shown.length +
+		(menu.length > MENU_LINES ? 1 : 0) +
+		1 +
+		(confirming ? 1 : 0);
+	const logHeight = Math.max(size.rows - fixed, 3);
+	const log = layoutLog(state.blocks, size.columns - 2);
+	const end = log.length - scroll;
+	const visible = log.slice(Math.max(end - logHeight, 0), end);
+	const above = Math.max(end - logHeight, 0);
+	if (above > 0) visible[0] = pc.dim(`↑ ${above} more lines, PgUp to scroll`);
+
+	const running = state.jobs.size;
 	return h(
 		Box,
-		{ flexDirection: "column" },
-		h(Static<Entry>, {
-			items: state.log.slice(startAt),
-			// biome-ignore lint/correctness/noChildrenProp: Static takes a render function, and its props type requires it there
-			children: (entry: Entry) => h(Text, { key: entry.id }, entry.text),
-		}),
+		{ flexDirection: "column", height: size.rows, width: size.columns },
 		h(
 			Box,
-			{ borderStyle: "round", paddingX: 1, flexDirection: "column" },
-			...lines.map((line, i) => h(Text, { key: i }, line)),
+			{
+				borderStyle: "round",
+				borderColor: "cyan",
+				paddingX: 1,
+				flexDirection: "column",
+				flexShrink: 0,
+			},
+			...lines.map((line, i) =>
+				h(Text, { key: i, wrap: "truncate-end" }, line),
+			),
 		),
-		running.length > 0
-			? h(
-					Text,
-					{ dimColor: true },
-					`running: ${running.map((j) => j.line).join(", ")}`,
-				)
-			: null,
+		h(
+			Box,
+			{
+				flexDirection: "column",
+				height: logHeight,
+				justifyContent: "flex-end",
+				paddingX: 1,
+				flexShrink: 0,
+			},
+			...visible.map((line, i) =>
+				h(Text, { key: i, wrap: "truncate-end" }, line || " "),
+			),
+		),
 		confirming
 			? h(
 					Text,
 					{ color: "yellow" },
 					"A campaign is running. Stop it cleanly and quit? [y/N]",
 				)
-			: h(
-					Text,
-					null,
-					pc.bold("> "),
-					input || pc.dim("/help lists the commands"),
-					pc.inverse(" "),
-				),
-		...menu
-			.slice(0, MENU_LINES)
-			.map((choice, i) =>
-				h(
-					Text,
-					{ key: choice.text, wrap: "truncate-end" },
-					i === selected ? pc.cyan(`  ${choice.label}`) : `  ${choice.label}`,
-					`  ${pc.dim(choice.detail)}`,
-				),
+			: null,
+		h(
+			Box,
+			{
+				borderStyle: "round",
+				borderColor: confirming ? "yellow" : "gray",
+				paddingX: 1,
+				flexShrink: 0,
+			},
+			h(
+				Text,
+				null,
+				pc.bold("> "),
+				input || pc.dim("Type / for the commands"),
+				pc.inverse(" "),
 			),
+		),
+		...shown.map((choice, i) =>
+			h(
+				Text,
+				{ key: choice.text, wrap: "truncate-end" },
+				i === selected ? pc.cyan(`  ${choice.label}`) : `  ${choice.label}`,
+				`  ${pc.dim(choice.detail)}`,
+			),
+		),
 		menu.length > MENU_LINES
 			? h(
 					Text,
@@ -296,5 +391,10 @@ export function App({
 					`  … ${menu.length - MENU_LINES} more, type to narrow`,
 				)
 			: null,
+		h(
+			Text,
+			{ dimColor: true, wrap: "truncate-end" },
+			`  ${running > 0 ? `${running} running · ` : ""}${KEYS}`,
+		),
 	);
 }
