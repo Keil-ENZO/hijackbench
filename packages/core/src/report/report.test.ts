@@ -32,6 +32,7 @@ type Spec = {
 	verdict: Verdict;
 	taskSuccess?: boolean;
 	exposed?: boolean | null;
+	annotation?: Verdict | null;
 };
 const make = (count: number, spec: Spec): RunResult[] =>
 	Array.from({ length: count }, (_, i) => ({
@@ -53,6 +54,7 @@ const make = (count: number, spec: Spec): RunResult[] =>
 					? true
 					: null,
 		judgeVersion: JUDGE_VERSION,
+		annotation: spec.annotation ?? null,
 	}));
 
 const data = (
@@ -354,6 +356,61 @@ describe("renderMarkdown", () => {
 		expect(markdown).toContain("**The judge is not calibrated yet.**");
 	});
 
+	it("has no calibration section before any annotation", () => {
+		expect(report.calibration).toBeNull();
+		expect(markdown).not.toContain("## Judge calibration");
+	});
+
+	it("adds the calibration once runs are annotated", () => {
+		const annotated = buildReport(
+			data("att", [
+				...make(18, {
+					taskId: "T1",
+					attackId: "A01",
+					verdict: "resisted_success",
+				}),
+				...make(2, {
+					taskId: "T1",
+					attackId: "A01",
+					verdict: "resisted_success",
+					annotation: "resisted_success",
+				}),
+				...make(3, {
+					taskId: "T2",
+					attackId: "A02",
+					verdict: "compromised",
+					annotation: "compromised",
+				}),
+				...make(1, {
+					taskId: "T2",
+					attackId: "A02",
+					verdict: "compromised",
+					annotation: "partial",
+				}),
+				...make(16, {
+					taskId: "T2",
+					attackId: "A02",
+					verdict: "resisted_success",
+				}),
+				...make(20, {
+					taskId: "T3",
+					attackId: "A03",
+					verdict: "resisted_success",
+				}),
+			]),
+			data("ref", referenceRuns()),
+		);
+		const text = renderMarkdown(annotated);
+		expect(text).toContain("## Judge calibration");
+		expect(text).toContain("6 runs of `att` were annotated by hand, blind");
+		expect(text).toContain("| compromised | **3** | 1 | 0 | 0 | 4 | 4 |");
+		expect(text).toContain(
+			`the annotation disagrees in ${formatRate(rateOf(1, 4))}, 1 of 4.`,
+		);
+		expect(text).toContain("**A small calibration.**");
+		expect(text).not.toContain("not calibrated yet");
+	});
+
 	it("links the CSV and carries no clock", () => {
 		expect(markdown).toContain("[runs.csv](runs.csv)");
 		expect(markdown).not.toMatch(/generated|\d{4}-\d{2}-\d{2}T/i);
@@ -367,16 +424,17 @@ describe("renderCsv", () => {
 			taskId: "T2",
 			attackId: "A14",
 			verdict: "compromised",
+			annotation: "partial",
 		});
 		const lines = renderCsv([ref as RunResult, att as RunResult]).split("\r\n");
 		expect(lines[0]).toBe(
-			"campaign,run_id,model,task,attack,family,objective,repetition,status,verdict,task_success,exposed,duration_ms,judge_version",
+			"campaign,run_id,model,task,attack,family,objective,repetition,status,verdict,task_success,exposed,duration_ms,judge_version,annotation",
 		);
 		expect(lines[1]).toBe(
-			`ref,${ref?.runId},m,T4,,,,1,done,resisted_success,true,,1000,${JUDGE_VERSION}`,
+			`ref,${ref?.runId},m,T4,,,,1,done,resisted_success,true,,1000,${JUDGE_VERSION},`,
 		);
 		expect(lines[2]).toBe(
-			`att,${att?.runId},m,T2,A14,tool_knowledge,destructive,1,done,compromised,true,true,1000,${JUDGE_VERSION}`,
+			`att,${att?.runId},m,T2,A14,tool_knowledge,destructive,1,done,compromised,true,true,1000,${JUDGE_VERSION},partial`,
 		);
 		expect(lines).toHaveLength(4);
 	});

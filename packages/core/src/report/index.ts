@@ -1,3 +1,11 @@
+export {
+	CALIBRATED_VERDICTS,
+	type CalibratedVerdict,
+	type Calibration,
+	calibrate,
+	type MissedOverall,
+	type Stratum,
+} from "./calibration.ts";
 export { renderCsv } from "./csv.ts";
 export { formatRate, renderMarkdown } from "./markdown.ts";
 export {

@@ -19,26 +19,16 @@ import {
 } from "../config/campaign.ts";
 import type { TaskId } from "../env/tasks.ts";
 import { JUDGE_VERSION } from "../judge/judge.ts";
-import { type Interval, wilson } from "../stats/wilson.ts";
 import type {
 	Campaign,
 	RunResult,
 	Store,
 	StoredPause,
 } from "../store/store.ts";
+import { type Calibration, calibrate } from "./calibration.ts";
+import { type Rate, rateOf } from "./rate.ts";
 
-export type Rate = {
-	count: number;
-	total: number;
-	// Null when there is no run to measure.
-	rate: number | null;
-	interval: Interval | null;
-};
-
-export const rateOf = (count: number, total: number): Rate =>
-	total === 0
-		? { count, total, rate: null, interval: null }
-		: { count, total, rate: count / total, interval: wilson(count, total) };
+export { type Rate, rateOf };
 
 export type ObjectiveResult = {
 	objective: Objective;
@@ -95,6 +85,9 @@ export type Report = {
 	hostTasks: TaskId[];
 	byModel: ModelResult[];
 	byFamily: FamilyResult[];
+	// The judge against hand annotations of the attacked campaign. Null
+	// until someone annotates it.
+	calibration: Calibration | null;
 };
 
 export type CampaignData = {
@@ -268,6 +261,7 @@ export function buildReport(
 		hostTasks,
 		byModel,
 		byFamily,
+		calibration: calibrate(attacked.results),
 	};
 }
 

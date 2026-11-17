@@ -19,6 +19,7 @@ const COLUMNS = [
 	"exposed",
 	"duration_ms",
 	"judge_version",
+	"annotation",
 ] as const;
 
 type Cell = string | number | boolean | null;
@@ -46,6 +47,7 @@ export function renderCsv(results: readonly RunResult[]): string {
 			exposed: run.exposed,
 			duration_ms: run.durationMs,
 			judge_version: run.judgeVersion,
+			annotation: run.annotation,
 		};
 		return COLUMNS.map((column) => quote(row[column])).join(",");
 	});
