@@ -49,7 +49,7 @@ The templates are copied word for word, see `THIRD_PARTY_NOTICES.md`. The catalo
 bin/hijackbench
 ```
 
-Alone, in a terminal, `hijackbench` opens an interactive shell. A panel at the top follows the campaign running, or else the newest: progress, time left, GPU memory temperature, the run in flight. Below it, a prompt takes slash commands, one per command of the CLI.
+Alone, in a terminal, `hijackbench` opens an interactive shell, full screen. A panel at the top follows the campaign running, or else the newest: progress, time left, GPU memory temperature, the run in flight. Below it, each command shows as a block, its output indented under it. At the bottom, a framed prompt takes slash commands, one per command of the CLI. PgUp and PgDn scroll the log. Quitting gives the terminal back as it was.
 
 - Type `/` for the menu, Tab to complete, the arrows to pick a command or to go back in the history.
 - After `/run `, the menu lists the files of `campaigns/`, each with its state: new, stopped at X/Y runs, or complete. After `/status `, `/resume `, `/judge `, `/annotate ` and `/report `, it lists the campaigns of the base. Type part of a name to narrow it.

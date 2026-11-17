@@ -28,6 +28,8 @@ export function startJob(
 	options: {
 		campaign: boolean;
 		color: boolean;
+		// Room for the output in the log, for commands that fit their tables.
+		columns?: number;
 		onLine: (text: string) => void;
 	},
 ): Job {
@@ -35,6 +37,7 @@ export function startJob(
 		env: {
 			...process.env,
 			...(options.color && !process.env.NO_COLOR && { FORCE_COLOR: "1" }),
+			...(options.columns && { COLUMNS: String(options.columns) }),
 		},
 		stdio: ["ignore", "pipe", "pipe"],
 	});

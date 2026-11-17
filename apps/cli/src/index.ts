@@ -68,6 +68,14 @@ function openBase() {
 	return openStore(basePath());
 }
 
+// The terminal's width, or the shell's, passed in COLUMNS to its commands.
+// Infinite in a pipe: nothing gets folded for a file.
+function outputWidth(): number {
+	if (process.stdout.columns) return process.stdout.columns;
+	const columns = Number(process.env.COLUMNS);
+	return columns > 0 ? columns : Number.POSITIVE_INFINITY;
+}
+
 // Out of a campaign, Ollama is found through OLLAMA_URL.
 const ollamaUrl = () => process.env.OLLAMA_URL ?? DEFAULT_OLLAMA_URL;
 
@@ -578,7 +586,9 @@ Exit codes: 0 when the campaign is found, 1 when it is not.`,
 						// Redraw in place in a terminal, append in a pipe.
 						if (every && process.stdout.isTTY)
 							process.stdout.write("\x1b[H\x1b[2J");
-						console.log(renderStatus(status, vram, config.thermal));
+						console.log(
+							renderStatus(status, vram, config.thermal, outputWidth()),
+						);
 					}
 					if (!every) return;
 					await sleep(every * 1000);

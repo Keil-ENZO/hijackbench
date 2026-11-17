@@ -15,8 +15,8 @@ export async function startShell(options: {
 	version: string;
 }) {
 	const state = new ShellState();
-	state.print(
-		`${pc.bold("hijackbench")} ${options.version} · /help lists the commands, Tab completes, Ctrl+C quits`,
+	state.note(
+		`${pc.bold("hijackbench")} ${options.version} ${pc.dim("· measure how tool-using agents resist prompt injection")}`,
 	);
 	for (;;) {
 		// Set by the app before it exits. A box: TypeScript cannot see the
@@ -33,14 +33,16 @@ export async function startShell(options: {
 					chosen.action = action;
 				},
 			}),
-			{ exitOnCtrlC: false },
+			// Full screen: the panel stays at the top, the terminal comes back
+			// as it was on quit.
+			{ exitOnCtrlC: false, alternateScreen: true },
 		);
 		await app.waitUntilExit();
 		const { action } = chosen;
 		if (action.type === "quit") return;
 		const code = runInTerminal(action.args);
-		state.print(pc.dim(`back from ${action.line}`));
-		if (code !== 0)
-			state.print(pc.red(`✗ ${action.line} exited with code ${code ?? "?"}`));
+		const block = state.start(action.line);
+		state.append(block, pc.dim("ran in the full terminal"));
+		state.finish(block, code);
 	}
 }

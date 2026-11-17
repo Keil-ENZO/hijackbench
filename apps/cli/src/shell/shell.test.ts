@@ -337,6 +337,34 @@ describe("App", () => {
 		expect(actions).toEqual([{ type: "quit" }]);
 	});
 
+	it("keeps the panel at the top and the prompt framed at the bottom", async () => {
+		current = mount();
+		const { type, app } = current;
+		await type("/status a\r");
+		const rows = plain(app.lastFrame()).split("\n");
+		expect(rows[1]).toContain("PANEL");
+		const prompt = rows.findIndex((r) =>
+			r.includes("> Type / for the commands"),
+		);
+		expect(rows[prompt - 1]).toMatch(/^╭─+╮$/);
+		expect(rows.at(-1)).toContain("PgUp PgDn scroll");
+		expect(rows.join("\n")).toContain(
+			"● /status a  running…\n   ⎿ started status a",
+		);
+	});
+
+	it("scrolls the log with PgUp and PgDn", async () => {
+		current = mount();
+		const { type, app } = current;
+		for (let i = 0; i < 12; i++) await type(`/status s${i}\r`);
+		expect(plain(app.lastFrame())).toMatch(/↑ \d+ more lines, PgUp to scroll/);
+		expect(plain(app.lastFrame())).toContain("started status s11");
+		await type("\x1b[5~");
+		expect(plain(app.lastFrame())).not.toContain("started status s11");
+		await type("\x1b[6~");
+		expect(plain(app.lastFrame())).toContain("started status s11");
+	});
+
 	it("quits at once without a campaign", async () => {
 		current = mount();
 		const { type, actions } = current;
