@@ -52,6 +52,7 @@ bin/hijackbench
 Alone, in a terminal, `hijackbench` opens an interactive shell. A panel at the top follows the campaign running, or else the newest: progress, time left, GPU memory temperature, the run in flight. Below it, a prompt takes slash commands, one per command of the CLI.
 
 - Type `/` for the menu, Tab to complete, the arrows to pick a command or to go back in the history.
+- After `/run `, the menu lists the files of `campaigns/`, each with its state: new, stopped at X/Y runs, or complete. After `/status `, `/resume `, `/judge `, `/annotate ` and `/report `, it lists the campaigns of the base. Type part of a name to narrow it.
 - `/run` keeps going while you type other commands: `/status`, `/doctor`, `/stop`.
 - `/annotate` takes the whole terminal, then comes back to the shell.
 - Ctrl+C or `/quit` leaves. During a campaign, the shell asks first, then stops it cleanly: `resume` picks it up later.

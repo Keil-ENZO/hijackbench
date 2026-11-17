@@ -77,13 +77,55 @@ export function parseLine(
 		: { kind: "unknown", name };
 }
 
-// The commands a partial first word could become. Empty once the first
-// word is complete and followed by a space: the menu closes.
+// A line the menu offers. Picking it puts text in the prompt; a ready
+// line runs on Enter, the others wait for what is missing.
+export type Suggestion = {
+	kind: "command" | "argument";
+	text: string;
+	label: string;
+	detail: string;
+	ready: boolean;
+};
+
+// The values an argument can take, with a word on each: campaign files
+// for run, campaign ids for status. Empty for a command without one.
+export type ArgumentSource = (
+	command: string,
+) => { value: string; detail: string }[];
+
+// A required argument in the usage: completing the command is not enough.
+const needsArgs = (command: SlashCommand) => command.usage.includes("<");
+
+// The commands a partial first word could become, or the values its
+// first argument could take. Nothing once a second argument starts.
 export function complete(
 	line: string,
 	commands: readonly SlashCommand[],
-): SlashCommand[] {
-	if (!line.startsWith("/") || /\s/.test(line)) return [];
-	const prefix = line.slice(1);
-	return commands.filter((c) => c.name.startsWith(prefix));
+	argumentsOf: ArgumentSource = () => [],
+): Suggestion[] {
+	if (line.startsWith("/") && !/\s/.test(line)) {
+		const prefix = line.slice(1);
+		return commands
+			.filter((c) => c.name.startsWith(prefix))
+			.map((c) => ({
+				kind: "command",
+				text: needsArgs(c) ? `/${c.name} ` : `/${c.name}`,
+				label: `/${c.name} ${c.usage}`.trimEnd(),
+				detail: c.description,
+				ready: !needsArgs(c),
+			}));
+	}
+	const match = line.match(/^\/?(\S+) (\S*)$/);
+	if (!match) return [];
+	const [, name = "", partial = ""] = match;
+	if (!commands.some((c) => c.name === name)) return [];
+	return argumentsOf(name)
+		.filter((a) => a.value.includes(partial))
+		.map((a) => ({
+			kind: "argument",
+			text: `/${name} ${a.value}`,
+			label: a.value,
+			detail: a.detail,
+			ready: true,
+		}));
 }

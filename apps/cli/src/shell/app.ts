@@ -5,10 +5,18 @@
 import { Box, Static, Text, useApp, useInput } from "ink";
 import pc from "picocolors";
 import { createElement as h, useEffect, useState } from "react";
-import { complete, parseLine, type SlashCommand } from "./commands.ts";
+import {
+	type ArgumentSource,
+	complete,
+	parseLine,
+	type SlashCommand,
+} from "./commands.ts";
 import { type Job, startJob, stopJob } from "./jobs.ts";
 
 export type Entry = { id: number; text: string };
+
+// Lines of the menu on screen at once.
+const MENU_LINES = 10;
 
 // What outlives one mount of the app: annotate unmounts it to take the
 // terminal, and the log, the history and the jobs must come back.
@@ -52,6 +60,7 @@ export type AppProps = {
 	color: boolean;
 	onAction: (action: ShellAction) => void;
 	launch?: Launch;
+	argumentsOf?: ArgumentSource;
 };
 
 const help = (commands: readonly SlashCommand[]) => {
@@ -66,9 +75,6 @@ const help = (commands: readonly SlashCommand[]) => {
 		.join("\n");
 };
 
-// A required argument in the usage: the menu completes, Enter waits.
-const needsArgs = (command: SlashCommand) => command.usage.includes("<");
-
 export function App({
 	commands,
 	state,
@@ -77,6 +83,7 @@ export function App({
 	color,
 	onAction,
 	launch = startJob,
+	argumentsOf,
 }: AppProps) {
 	const { exit } = useApp();
 	const [startAt] = useState(() => state.printed);
@@ -84,6 +91,8 @@ export function App({
 	const [lines, setLines] = useState(panel);
 	const [input, setInput] = useState("");
 	const [selected, setSelected] = useState(0);
+	// Whether the arrows moved in the menu: Enter then takes that line.
+	const [picked, setPicked] = useState(false);
 	// Index in the history while browsing it, null when typing.
 	const [browsing, setBrowsing] = useState<number | null>(null);
 	const [confirming, setConfirming] = useState(false);
@@ -94,7 +103,7 @@ export function App({
 		return () => clearInterval(timer);
 	}, [panel, refreshMs]);
 
-	const menu = complete(input, commands);
+	const menu = complete(input, commands, argumentsOf);
 	const campaigns = [...state.jobs.values()].filter((j) => j.campaign);
 
 	const leave = (action: ShellAction) => {
@@ -115,6 +124,7 @@ export function App({
 		setInput("");
 		setBrowsing(null);
 		setSelected(0);
+		setPicked(false);
 		if (!line.trim()) return;
 		if (state.history.at(-1) !== line) state.history.push(line);
 		state.print(pc.dim(`> ${line}`));
@@ -163,22 +173,30 @@ export function App({
 		}
 		if (special.return) {
 			const choice = menu[selected];
-			if (choice && input !== `/${choice.name}`) {
-				if (needsArgs(choice)) setInput(`/${choice.name} `);
-				else execute(`/${choice.name}`);
-				return;
-			}
-			return execute(input);
+			// An argument menu under "/status " must not swallow a plain
+			// /status: its line is taken once picked or partly typed.
+			const take =
+				choice && (choice.kind === "command" || picked || !input.endsWith(" "));
+			if (!choice || !take) return execute(input);
+			if (choice.ready) return execute(choice.text);
+			setInput(choice.text);
+			setSelected(0);
+			return;
 		}
 		if (special.tab) {
 			const choice = menu[selected];
-			if (choice) setInput(`/${choice.name} `);
+			if (choice) {
+				setInput(choice.text.endsWith(" ") ? choice.text : `${choice.text} `);
+				setSelected(0);
+				setPicked(false);
+			}
 			return;
 		}
 		if (special.upArrow || special.downArrow) {
 			const step = special.upArrow ? -1 : 1;
 			if (menu.length > 0) {
 				setSelected((s) => (s + step + menu.length) % menu.length);
+				setPicked(true);
 				return;
 			}
 			const { history } = state;
@@ -207,6 +225,7 @@ export function App({
 		if (special.backspace || special.delete) {
 			setInput((s) => s.slice(0, -1));
 			setSelected(0);
+			setPicked(false);
 			return;
 		}
 		if (key && !special.ctrl && !special.meta) {
@@ -221,6 +240,7 @@ export function App({
 			}
 			setInput((s) => s + key);
 			setSelected(0);
+			setPicked(false);
 			setBrowsing(null);
 		}
 	});
@@ -259,15 +279,22 @@ export function App({
 					input || pc.dim("/help lists the commands"),
 					pc.inverse(" "),
 				),
-		...menu.map((command, i) =>
-			h(
-				Text,
-				{ key: command.name },
-				i === selected
-					? pc.cyan(`  /${command.name} ${command.usage}`.trimEnd())
-					: `  /${command.name} ${command.usage}`.trimEnd(),
-				`  ${pc.dim(command.description)}`,
+		...menu
+			.slice(0, MENU_LINES)
+			.map((choice, i) =>
+				h(
+					Text,
+					{ key: choice.text, wrap: "truncate-end" },
+					i === selected ? pc.cyan(`  ${choice.label}`) : `  ${choice.label}`,
+					`  ${pc.dim(choice.detail)}`,
+				),
 			),
-		),
+		menu.length > MENU_LINES
+			? h(
+					Text,
+					{ dimColor: true },
+					`  … ${menu.length - MENU_LINES} more, type to narrow`,
+				)
+			: null,
 	);
 }
