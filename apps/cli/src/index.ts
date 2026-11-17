@@ -48,6 +48,7 @@ import { renderChecks, renderModels } from "./doctor.ts";
 import { slashCommands } from "./shell/commands.ts";
 import { startShell } from "./shell/index.ts";
 import { panelLines } from "./shell/panel.ts";
+import { argumentSource } from "./shell/sources.ts";
 
 const pct = (x: number) => `${(x * 100).toFixed(1)} %`;
 
@@ -810,6 +811,7 @@ if (bare && process.stdin.isTTY && process.stdout.isTTY) {
 		await startShell({
 			commands: slashCommands(program.commands),
 			panel: () => shellPanel(store),
+			argumentsOf: argumentSource(store),
 			version: VERSION,
 		});
 	} finally {

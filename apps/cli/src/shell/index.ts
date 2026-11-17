@@ -5,12 +5,13 @@ import { render } from "ink";
 import pc from "picocolors";
 import { createElement as h } from "react";
 import { App, type ShellAction, ShellState } from "./app.ts";
-import type { SlashCommand } from "./commands.ts";
+import type { ArgumentSource, SlashCommand } from "./commands.ts";
 import { runInTerminal } from "./jobs.ts";
 
 export async function startShell(options: {
 	commands: SlashCommand[];
 	panel: () => string[];
+	argumentsOf: ArgumentSource;
 	version: string;
 }) {
 	const state = new ShellState();
@@ -26,6 +27,7 @@ export async function startShell(options: {
 				commands: options.commands,
 				state,
 				panel: options.panel,
+				argumentsOf: options.argumentsOf,
 				color: pc.isColorSupported,
 				onAction: (action) => {
 					chosen.action = action;

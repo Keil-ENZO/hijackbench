@@ -69,14 +69,35 @@ describe("slash commands", () => {
 		expect(parseLine("   ", COMMANDS)).toEqual({ kind: "empty" });
 	});
 
-	it("complete the first word only", () => {
-		expect(complete("/st", COMMANDS).map((c) => c.name)).toEqual([
-			"status",
-			"stop",
+	it("complete the first word into commands", () => {
+		expect(complete("/st", COMMANDS).map((c) => c.label)).toEqual([
+			"/status [id]",
+			"/stop [reason]",
 		]);
 		expect(complete("/", COMMANDS)).toHaveLength(COMMANDS.length);
-		expect(complete("/status ", COMMANDS)).toEqual([]);
 		expect(complete("status", COMMANDS)).toEqual([]);
+		// A command that needs an argument waits for it.
+		expect(complete("/ru", COMMANDS)[0]).toMatchObject({
+			text: "/run ",
+			ready: false,
+		});
+	});
+
+	it("complete the first argument from its source", () => {
+		const source = (command: string) =>
+			command === "run"
+				? [
+						{ value: "campaigns/attacked-v0.yaml", detail: "complete" },
+						{ value: "campaigns/reference-v0.yaml", detail: "complete" },
+					]
+				: [];
+		expect(
+			complete("/run att", COMMANDS, source).map((s) => [s.text, s.ready]),
+		).toEqual([["/run campaigns/attacked-v0.yaml", true]]);
+		expect(complete("/run ", COMMANDS, source)).toHaveLength(2);
+		expect(complete("/stop ", COMMANDS, source)).toEqual([]);
+		expect(complete("/run a b", COMMANDS, source)).toEqual([]);
+		expect(complete("/nope x", COMMANDS, source)).toEqual([]);
 	});
 });
 
@@ -172,6 +193,14 @@ function fakeLaunch() {
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 
+const SOURCE = (command: string) =>
+	command === "status"
+		? [
+				{ value: "attacked-v0", detail: "complete" },
+				{ value: "reference-v0", detail: "complete" },
+			]
+		: [];
+
 function mount() {
 	const state = new ShellState();
 	const actions: ShellAction[] = [];
@@ -184,6 +213,7 @@ function mount() {
 			color: false,
 			onAction: (action) => actions.push(action),
 			launch,
+			argumentsOf: SOURCE,
 		}),
 	);
 	const type = async (...keys: string[]) => {
@@ -214,9 +244,9 @@ describe("App", () => {
 	it("completes with Tab, runs on Enter, logs the output", async () => {
 		current = mount();
 		const { type, started, screen } = current;
-		await type("/sta", "\t", "ref", "\r");
-		expect(started.map((s) => s.args)).toEqual([["status", "ref"]]);
-		expect(screen()).toContain("started status ref");
+		await type("/sta", "\t", "zzz", "\r");
+		expect(started.map((s) => s.args)).toEqual([["status", "zzz"]]);
+		expect(screen()).toContain("started status zzz");
 	});
 
 	it("runs a command without arguments straight from the menu", async () => {
@@ -232,6 +262,26 @@ describe("App", () => {
 		await type("/ru", "\r");
 		expect(started).toEqual([]);
 		expect(plain(app.lastFrame())).toContain("> /run");
+	});
+
+	it("offers the ids after a command, and keeps a plain Enter plain", async () => {
+		current = mount();
+		const { type, started, app } = current;
+		await type("/status ");
+		expect(plain(app.lastFrame())).toContain("attacked-v0  complete");
+		await type("\r");
+		expect(started.map((s) => s.args)).toEqual([["status"]]);
+	});
+
+	it("takes an id picked with the arrows or partly typed", async () => {
+		current = mount();
+		const { type, started } = current;
+		await type("/status ", "\x1b[B", "\r");
+		await type("/status att", "\r");
+		expect(started.map((s) => s.args)).toEqual([
+			["status", "reference-v0"],
+			["status", "attacked-v0"],
+		]);
 	});
 
 	it("runs each line of a paste", async () => {
