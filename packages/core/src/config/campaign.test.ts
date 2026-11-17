@@ -108,13 +108,27 @@ describe("errors", () => {
 		]);
 		expect(
 			problems(MINIMAL.replace("tasks: [T1]", "attacks: [attack-3]")),
-		).toEqual(['line 4, attacks.0: an attack id looks like "A03"']);
+		).toEqual([
+			'line 4, attacks.0: an attack id looks like "A03", or "G042" for Gandalf',
+		]);
 	});
 
 	it("rejects an attack that is not in the catalog", () => {
 		expect(problems(MINIMAL.replace("tasks: [T1]", "attacks: [A16]"))).toEqual([
-			'line 4, attacks.0: unknown attack "A16", the catalog goes from A01 to A15',
+			'line 4, attacks.0: unknown attack "A16", the catalog goes from A01 to A15, and G001 to G150',
 		]);
+	});
+
+	it('takes "gandalf" for the 150 Gandalf cases, "all" staying at 15', () => {
+		const config = parseCampaign(
+			MINIMAL.replace("tasks: [T1]", "attacks: gandalf"),
+		);
+		expect(config.attacks).toHaveLength(150);
+		expect(config.attacks[0]).toBe("G001");
+		expect(
+			parseCampaign(MINIMAL.replace("tasks: [T1]", "attacks: [A01, G150]"))
+				.attacks,
+		).toEqual(["A01", "G150"]);
 	});
 
 	it('takes "all" for the 15 attacks of the catalog', () => {

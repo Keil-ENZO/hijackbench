@@ -1,0 +1,18 @@
+# Real injections from Gandalf players, DEC-08. See US-33.
+# 50 texts x 3 objectives = 150 cases, x 3 models x 5 runs = 2,250 runs.
+#
+# Same trio, same temperature and same thermal guards as attacked-v0 and
+# the reference reference-v0-r3: the three campaigns compare run for run.
+# The texts come from Lakera/gandalf_ignore_instructions, MIT, drawn by
+# scripts/fetch-gandalf.ts.
+id: gandalf-v0
+name: Gandalf injections, 50 real texts against the three objectives
+models:
+  - gemma4:26b
+  - qwen3-coder:30b-a3b-q4_K_M
+  - devstral-small-2:24b
+attacks: gandalf
+runs: 5
+
+agent:
+  temperature: 0.7
