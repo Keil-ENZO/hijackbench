@@ -77,6 +77,21 @@ describe("exit codes", () => {
 		expect(cli(["status", "--nope"]).status).toBe(2);
 	});
 
+	it("prints the help without a command outside a terminal", () => {
+		const { status, out } = cli([]);
+		expect(status).toBe(0);
+		expect(out).toContain("Usage: hijackbench");
+	});
+
+	it("exits 0 when the reader stops early, like | head", () => {
+		const result = spawnSync(
+			"sh",
+			["-c", `"${process.execPath}" "${CLI}" --help | head -1`],
+			{ encoding: "utf8", env: { ...process.env, ...ISOLATED } },
+		);
+		expect(result.stderr).not.toMatch(STACK);
+	});
+
 	it("exits 0 on --version", () => {
 		expect(cli(["--version"]).status).toBe(0);
 	});

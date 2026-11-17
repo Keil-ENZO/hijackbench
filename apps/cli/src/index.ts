@@ -44,6 +44,9 @@ import pc from "picocolors";
 import { annotateSession, LABELS } from "./annotate.ts";
 import { formatDuration, renderStatus } from "./display.ts";
 import { renderChecks, renderModels } from "./doctor.ts";
+import { slashCommands } from "./shell/commands.ts";
+import { startShell } from "./shell/index.ts";
+import { panelLines } from "./shell/panel.ts";
 
 const pct = (x: number) => `${(x * 100).toFixed(1)} %`;
 
@@ -769,5 +772,41 @@ Examples:
 ${EXIT_CODES}`,
 );
 
+// The live panel of the shell: the campaign running, or else the newest.
+function shellPanel(store: Store): string[] {
+	try {
+		const id = defaultCampaignId(store);
+		const status = id ? campaignStatus(store, id) : undefined;
+		const config = status
+			? CampaignConfigSchema.parse(store.getCampaign(status.id)?.config)
+			: undefined;
+		return panelLines(status, vramNow(), config?.thermal ?? DEFAULT_THRESHOLDS);
+	} catch (error) {
+		return [`Cannot read the base: ${(error as Error).message}`];
+	}
+}
+
 process.on("unhandledRejection", reportError);
-await program.parseAsync().catch(reportError);
+// A reader that stops early, like `| head`, is not an error.
+for (const stream of [process.stdout, process.stderr])
+	stream.on("error", (error: NodeJS.ErrnoException) => {
+		if (error.code === "EPIPE") process.exit(EXIT.ok);
+		reportError(error);
+	});
+const bare = process.argv.length <= 2;
+if (bare && process.stdin.isTTY && process.stdout.isTTY) {
+	// `hijackbench` alone, in a terminal: the shell. DEC-07.
+	const store = openBase();
+	try {
+		await startShell({
+			commands: slashCommands(program.commands),
+			panel: () => shellPanel(store),
+			version: VERSION,
+		});
+	} finally {
+		store.close();
+	}
+} else if (bare) {
+	// In a pipe or a script, the help, as before the shell.
+	program.outputHelp();
+} else await program.parseAsync().catch(reportError);

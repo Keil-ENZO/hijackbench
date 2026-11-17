@@ -43,6 +43,21 @@ The V0 runs 15 attacks, none of them home-made. Each one is a technique family o
 
 The templates are copied word for word, see `THIRD_PARTY_NOTICES.md`. The catalog lives in `packages/core/src/attacks/catalog.ts`. A campaign file lists attacks by id, or takes `attacks: all`.
 
+## Shell
+
+```bash
+bin/hijackbench
+```
+
+Alone, in a terminal, `hijackbench` opens an interactive shell. A panel at the top follows the campaign running, or else the newest: progress, time left, GPU memory temperature, the run in flight. Below it, a prompt takes slash commands, one per command of the CLI.
+
+- Type `/` for the menu, Tab to complete, the arrows to pick a command or to go back in the history.
+- `/run` keeps going while you type other commands: `/status`, `/doctor`, `/stop`.
+- `/annotate` takes the whole terminal, then comes back to the shell.
+- Ctrl+C or `/quit` leaves. During a campaign, the shell asks first, then stops it cleanly: `resume` picks it up later.
+
+Each slash command runs the CLI command of the same name, so both behave the same. In a pipe or a script, `hijackbench` alone prints the help, as before.
+
 ## Commands
 
 Every command below goes through `bin/hijackbench`, a wrapper that runs the CLI in Docker on the data volume, from any directory or over SSH. Without Docker, replace it with `node apps/cli/src/index.ts`.
