@@ -277,6 +277,17 @@ export function openStore(path: string) {
 				.run();
 		},
 
+		// The runs of a campaign Enzo has annotated already.
+		annotatedRunIds(campaignId: string): Set<number> {
+			const rows = db
+				.select({ runId: annotations.runId })
+				.from(annotations)
+				.innerJoin(runs, eq(runs.id, annotations.runId))
+				.where(eq(runs.campaignId, campaignId))
+				.all();
+			return new Set(rows.map((row) => row.runId));
+		},
+
 		getAnnotation(runId: number): Annotation | undefined {
 			return db
 				.select()
