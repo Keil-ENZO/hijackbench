@@ -735,6 +735,10 @@ program
 		"-r, --reference <id>",
 		"reference campaign, same models without attack",
 	)
+	.option(
+		"-c, --compare <id>",
+		"another attacked campaign on the same reference, compared objective by objective",
+	)
 	.option("--csv", "print the raw CSV, one line per run, instead")
 	.option("-o, --out <dir>", "write report.md and runs.csv into this directory")
 	.addHelpText(
@@ -745,24 +749,37 @@ Without --out, the report goes to stdout: that is how Docker writes it.
 Examples:
   $ hijackbench report attacked-v0 -r reference-v0-r3 > reports/v0/report.md
   $ hijackbench report attacked-v0 -r reference-v0-r3 --csv > reports/v0/runs.csv
-  $ node apps/cli/src/index.ts report attacked-v0 -r reference-v0-r3 -o reports/v0`,
+  $ node apps/cli/src/index.ts report attacked-v0 -r reference-v0-r3 -o reports/v0
+  $ hijackbench report gandalf-v0 -r reference-v0-r3 -c attacked-v0 > reports/gandalf-v0/report.md`,
 	)
 	.action(
 		(
 			id: string,
-			options: { reference: string; csv?: boolean; out?: string },
+			options: {
+				reference: string;
+				compare?: string;
+				csv?: boolean;
+				out?: string;
+			},
 		) => {
 			const store = openBase();
 			let built: ReturnType<typeof loadReport>;
+			let compare: ReturnType<typeof loadReport>["report"] | undefined;
 			try {
 				built = loadReport(store, id, options.reference);
+				if (options.compare)
+					compare = loadReport(
+						store,
+						options.compare,
+						options.reference,
+					).report;
 			} catch (error) {
 				console.error(error instanceof Error ? error.message : error);
 				process.exit(EXIT.failure);
 			} finally {
 				store.close();
 			}
-			const markdown = renderMarkdown(built.report);
+			const markdown = renderMarkdown(built.report, compare);
 			const csv = renderCsv(built.results);
 			if (!options.out) {
 				process.stdout.write(options.csv ? csv : markdown);

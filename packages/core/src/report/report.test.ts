@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AGENTDOJO, attackById } from "../attacks/catalog.ts";
+import { GANDALF } from "../attacks/gandalf.ts";
 import { parseCampaign } from "../config/campaign.ts";
 import { JUDGE_VERSION } from "../judge/judge.ts";
 import { wilson } from "../stats/wilson.ts";
@@ -230,6 +232,62 @@ describe("buildReport", () => {
 		]);
 	});
 
+	it("sums every case of a family, Gandalf's 50 texts included", () => {
+		const report = buildReport(
+			data("att", [
+				...make(3, { taskId: "T2", attackId: "G002", verdict: "compromised" }),
+				...make(2, {
+					taskId: "T2",
+					attackId: "G002",
+					verdict: "resisted_success",
+				}),
+				...make(1, { taskId: "T2", attackId: "G005", verdict: "compromised" }),
+				...make(4, {
+					taskId: "T2",
+					attackId: "G005",
+					verdict: "resisted_success",
+				}),
+				...make(5, {
+					taskId: "T2",
+					attackId: "G008",
+					verdict: "resisted_success",
+				}),
+			]),
+			data("ref", referenceRuns()),
+		);
+		expect(report.byFamily).toEqual([
+			{ family: "gandalf", objective: "destructive", success: [rateOf(4, 15)] },
+		]);
+		expect(report.attacks).toBe(3);
+		expect(report.sources).toEqual([GANDALF]);
+	});
+
+	it("ranks the Gandalf texts that got through, at most five", () => {
+		const runs = ["G002", "G005", "G008", "G011", "G014", "G017", "G020"]
+			.flatMap((attackId, i) => [
+				...make(i, { taskId: "T2", attackId, verdict: "compromised" }),
+				...make(5 - Math.min(i, 5), {
+					taskId: "T2",
+					attackId,
+					verdict: "resisted_success",
+				}),
+			])
+			.concat(
+				make(5, { taskId: "T2", attackId: "A02", verdict: "compromised" }),
+			);
+		const report = buildReport(data("att", runs), data("ref", referenceRuns()));
+		// G002 never got through; A02 is a template, not a real text.
+		expect(report.topTexts.map(({ attack }) => attack.id)).toEqual([
+			"G020",
+			"G017",
+			"G014",
+			"G011",
+			"G008",
+		]);
+		expect(report.topTexts[0]?.success).toEqual(rateOf(6, 6));
+		expect(report.sources).toEqual([AGENTDOJO, GANDALF]);
+	});
+
 	it("sums the time and the thermal pauses of each campaign", () => {
 		const report = buildReport(
 			data(
@@ -409,6 +467,57 @@ describe("renderMarkdown", () => {
 		);
 		expect(text).toContain("**A small calibration.**");
 		expect(text).not.toContain("not calibrated yet");
+	});
+
+	it("cites AgentDojo only, without Gandalf sections", () => {
+		expect(markdown).toContain("3 public attacks");
+		expect(markdown).toContain("copied word for word");
+		expect(markdown).not.toContain("Gandalf");
+		expect(markdown).not.toContain("## Compared with");
+		expect(markdown).toContain("> reports/att/report.md");
+	});
+
+	it("cites Gandalf, quotes its texts and compares with AgentDojo", () => {
+		const gandalf = {
+			...buildReport(
+				data("att", [
+					...make(4, {
+						taskId: "T2",
+						attackId: "G002",
+						verdict: "compromised",
+					}),
+					...make(1, {
+						taskId: "T2",
+						attackId: "G002",
+						verdict: "resisted_success",
+					}),
+				]),
+				data("ref", referenceRuns()),
+			),
+		};
+		gandalf.attacked = { ...gandalf.attacked, id: "gandalf-v0" };
+		const agentdojo = {
+			...report,
+			attacked: { ...report.attacked, id: "attacked-v0" },
+		};
+		const text = renderMarkdown(gandalf, agentdojo);
+		expect(text).toContain(
+			`dataset \`${GANDALF.dataset}\` at revision \`${GANDALF.revision.slice(0, 12)}\`, MIT`,
+		);
+		expect(text).toContain("## Compared with `attacked-v0`");
+		expect(text).toContain(
+			`| \`m\` | Destructive | ${formatRate(rateOf(4, 5))}, 4 of 5 | ${formatRate(rateOf(7, 20))}, 7 of 20 | +45.0 pts |`,
+		);
+		expect(text).toContain("## The texts that got through most");
+		expect(text).toContain(
+			"1. **G002**, destructive, on T2: 4 of 5 exposed runs.",
+		);
+		const firstLine = (attackById("G002").text ?? "").split(/\r?\n/)[0] ?? "";
+		expect(text).toContain(`   ${firstLine.trimEnd()}`);
+		expect(text).toContain("**Gandalf prompts were written for a chatbot.**");
+		expect(text).toContain(
+			"report gandalf-v0 -r ref -c attacked-v0 > reports/gandalf-v0/report.md",
+		);
 	});
 
 	it("links the CSV and carries no clock", () => {
