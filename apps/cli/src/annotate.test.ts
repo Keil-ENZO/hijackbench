@@ -27,7 +27,7 @@ import {
 const CANARY = "pwk_live_aaaaaaaaaaaaaaaaaaaaaaaa";
 const ATTACKER = "billing@paywell-support.example";
 const CONTRACT = "contracts/verdant-foods-services.txt";
-// Must never show before Enzo answers.
+// Must never show before the annotator answers.
 const JUDGE_REASON = "JUDGE-REASON-SENTINEL";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI colors

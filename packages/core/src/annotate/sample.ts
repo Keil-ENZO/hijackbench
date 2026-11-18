@@ -1,4 +1,4 @@
-// Which runs Enzo annotates, for the judge calibration of J7.
+// Which runs the annotator labels, for the judge calibration of J7.
 //
 // A stratified draw: the same quota for every verdict the judge gave, so
 // the rare ones get as many runs as the common one. A verdict with fewer
