@@ -65,7 +65,7 @@ export type RunResult = RunCoordinates & {
 	taskSuccess: boolean | null;
 	exposed: boolean | null;
 	judgeVersion: string | null;
-	// Enzo's verdict, null when the run is not annotated.
+	// The annotator's verdict, null when the run is not annotated.
 	annotation: Verdict | null;
 };
 export type Annotation = typeof annotations.$inferSelect;
@@ -281,7 +281,7 @@ export function openStore(path: string) {
 				.run();
 		},
 
-		// The runs of a campaign Enzo has annotated already.
+		// The runs of a campaign the annotator has labelled already.
 		annotatedRunIds(campaignId: string): Set<number> {
 			const rows = db
 				.select({ runId: annotations.runId })

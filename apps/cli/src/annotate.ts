@@ -1,4 +1,4 @@
-// The annotate command: shows a run, asks Enzo for his verdict, then
+// The annotate command: shows a run, asks the annotator for their verdict, then
 // shows the judge's. Blind: nothing printed before the answer depends on
 // the judge's verdict.
 

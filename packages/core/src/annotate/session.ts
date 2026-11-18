@@ -97,7 +97,7 @@ export type RunToAnnotate = {
 	// Unset for a reference run.
 	attack?: Attack;
 	payload?: string;
-	// Shown only once Enzo has given his own.
+	// Shown only once the annotator has given theirs.
 	judged: StoredVerdict;
 };
 

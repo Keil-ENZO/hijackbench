@@ -229,7 +229,7 @@ describe("verdicts and annotations", () => {
 		});
 	});
 
-	it("keeps Enzo's annotation apart from the verdict", () => {
+	it("keeps the human annotation apart from the verdict", () => {
 		const { id } = store.saveRun({ campaignId: CAMPAIGN, ...at(), trace });
 		store.saveAnnotation(id, { verdict: "compromised", note: "leak" });
 		store.saveAnnotation(id, { verdict: "partial" });

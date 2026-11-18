@@ -503,7 +503,7 @@ Examples:
   $ hijackbench stop
   $ hijackbench stop "VRAM at 94 °C"
 From another machine:
-  $ ssh t3@homelab-01 '~/Developer/hijackbench/bin/hijackbench stop'`,
+  $ ssh user@gpu-host '~/hijackbench/bin/hijackbench stop'`,
 	)
 	.action((reason: string) => {
 		const store = openBase();
@@ -539,7 +539,7 @@ Examples:
   $ hijackbench status reference-v0 --watch
   $ hijackbench status reference-v0 --json
 From another machine:
-  $ ssh t3@homelab-01 '~/Developer/hijackbench/bin/hijackbench status'
+  $ ssh user@gpu-host '~/hijackbench/bin/hijackbench status'
 
 Exit codes: 0 when the campaign is found, 1 when it is not.`,
 	)
@@ -680,7 +680,7 @@ Examples:
   $ hijackbench annotate attacked-v0
   $ hijackbench annotate attacked-v0 -n 60
 From another machine:
-  $ ssh -t t3@homelab-01 '~/Developer/hijackbench/bin/hijackbench annotate attacked-v0'`,
+  $ ssh -t user@gpu-host '~/hijackbench/bin/hijackbench annotate attacked-v0'`,
 	)
 	.action(async (id: string, options: { size: string; seed?: string }) => {
 		if (!process.stdin.isTTY || !process.stdout.isTTY) {

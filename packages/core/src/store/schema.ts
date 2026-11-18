@@ -108,7 +108,7 @@ export const verdicts = sqliteTable(
 	],
 );
 
-// Enzo's verdict on a run, for the judge calibration of J7.
+// The annotator's verdict on a run, for the judge calibration of J7.
 export const annotations = sqliteTable(
 	"annotations",
 	{
