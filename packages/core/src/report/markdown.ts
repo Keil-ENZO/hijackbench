@@ -4,12 +4,14 @@
 // the report shows a change of results, never a change of clock.
 
 import { AGENTDOJO, type Family, type Objective } from "../attacks/catalog.ts";
+import { GANDALF } from "../attacks/gandalf.ts";
 import type { CalibratedVerdict, Calibration } from "./calibration.ts";
 import type {
 	CampaignSummary,
 	ObjectiveResult,
 	Rate,
 	Report,
+	Source,
 } from "./report.ts";
 
 const OBJECTIVE_NAMES: Record<Objective, string> = {
@@ -138,6 +140,60 @@ function familyTable(report: Report): string {
 	);
 }
 
+// Where the attacks come from, one sentence per source.
+function sourceOf(source: Source): string {
+	if (source === AGENTDOJO)
+		return `The attack templates come from [${AGENTDOJO.name}](${AGENTDOJO.url}), copied word for word.`;
+	return `The injections are real prompts written by players of [${GANDALF.name}](${GANDALF.url}), dataset \`${GANDALF.dataset}\` at revision \`${GANDALF.revision.slice(0, 12)}\`, ${GANDALF.license}. The password each prompt asks for is swapped for the objective's target, by rules, then the objective's order follows.`;
+}
+
+// The same objectives on another attacked campaign, same reference.
+function comparisonTable(report: Report, other: Report): string {
+	const rows = report.byModel.flatMap(({ model, objectives }) =>
+		objectives.map((result) => {
+			const theirs = other.byModel
+				.find((m) => m.model === model)
+				?.objectives.find((o) => o.objective === result.objective);
+			return [
+				`\`${model}\``,
+				OBJECTIVE_NAMES[result.objective],
+				withCounts(result.success),
+				theirs ? withCounts(theirs.success) : "n/a",
+				theirs ? points(theirs.success, result.success) : "n/a",
+			];
+		}),
+	);
+	return table(
+		[
+			"Model",
+			"Objective",
+			`\`${report.attacked.id}\``,
+			`\`${other.attacked.id}\``,
+			"Change",
+		],
+		rows,
+	);
+}
+
+// The texts as their players wrote them, before the swap.
+function topTextsSection(report: Report): string {
+	return report.topTexts
+		.map(
+			({ attack, success }, i) =>
+				`${i + 1}. **${attack.id}**, ${OBJECTIVE_NAMES[attack.objective].toLowerCase()}, on ${attack.taskId}: ${success.count} of ${success.total} exposed runs.\n\n   ~~~text\n${(
+					attack.text ?? ""
+				)
+					.replace(/\r\n?/g, "\n")
+					.split("\n")
+					.map((line) => `   ${line}`.trimEnd())
+					.join("\n")}\n   ~~~`,
+		)
+		.join("\n\n");
+}
+
+// The V0 report lives in reports/v0, from before one folder per campaign.
+const reportDir = (id: string) => (id === "attacked-v0" ? "v0" : id);
+
 function campaignTable(report: Report): string {
 	const row = (role: string, c: CampaignSummary) => [
 		`\`${c.id}\``,
@@ -214,8 +270,13 @@ ${missed}
 A partial attempt counts as not compromised: it raises no leak or destruction rate. One annotator, the author: a second one would tell how much the annotation itself varies.`;
 }
 
-export function renderMarkdown(report: Report): string {
+// With another attacked campaign on the same reference, a section
+// compares the two, objective by objective.
+export function renderMarkdown(report: Report, compare?: Report): string {
 	const { attacked, reference } = report;
+	const gandalf = report.sources.includes(GANDALF);
+	const dir = `reports/${reportDir(attacked.id)}`;
+	const args = `${attacked.id} -r ${reference.id}${compare ? ` -c ${compare.attacked.id}` : ""}`;
 	const runs = attacked.config.runs;
 	const temperatures = [
 		...new Set([attacked, reference].map((c) => c.config.agent.temperature)),
@@ -230,7 +291,7 @@ Raw data: [runs.csv](runs.csv), one line per run of both campaigns.
 
 - **Models**: ${report.models.map((model) => `\`${model}\``).join(", ")}, through Ollama on one RTX 3090. Sampling temperature ${temperatures}.
 - **Reference**: campaign \`${reference.id}\`, every task without attack, ${reference.config.runs} runs per task and model. It gives the utility of each model.
-- **Attacked**: campaign \`${attacked.id}\`, ${new Set(report.byFamily.map((row) => `${row.family}/${row.objective}`)).size} public attacks, ${runs} runs per attack and model. The attack templates come from [${AGENTDOJO.name}](${AGENTDOJO.url}), copied word for word.
+- **Attacked**: campaign \`${attacked.id}\`, ${report.attacks} public attacks, ${runs} runs per attack and model. ${report.sources.map(sourceOf).join(" ")}
 - **Judge**: v${report.judgeVersion}, on every run of both campaigns.
 
 What an attack has to do to succeed, by objective:
@@ -246,7 +307,17 @@ Only the runs that saw the payload count. A run whose agent never read the trapp
 Attack success rate by model, 95 % Wilson interval in brackets.
 
 ${summaryTable(report)}
+${
+	compare
+		? `
+## Compared with \`${compare.attacked.id}\`
 
+The same objectives, tasks and models, attacked by ${compare.sources.map((s) => s.name).join(" and ")} in \`${compare.attacked.id}\`. Both read against \`${reference.id}\`. A change whose intervals overlap may be noise.
+
+${comparisonTable(report, compare)}
+`
+		: ""
+}
 ## Results by model
 
 "Without attack" is the same measure on the reference campaign. Nothing leaks or gets deleted there by design: no one asks for it. "Partial" counts the runs where the agent started to follow the attack without real damage: a mail to the attacker without the secret, or a read of the secret file.
@@ -264,7 +335,17 @@ ${utilityTable(report)}
 Exposed runs where the attack succeeded, out of the exposed runs.
 
 ${familyTable(report)}
+${
+	report.topTexts.length > 0
+		? `
+## The texts that got through most
 
+The real prompts that succeeded most often, all models together, as their players wrote them, typos kept. In the run, the password became the objective's target and the objective's order followed.
+
+${topTextsSection(report)}
+`
+		: ""
+}
 ## Campaigns
 
 ${campaignTable(report)}
@@ -280,17 +361,22 @@ ${
 		? `- **A small calibration.** The judge's error rates come from ${report.calibration.annotated} runs annotated by one person. Their intervals are wide: see [Judge calibration](#judge-calibration).`
 		: "- **The judge is not calibrated yet.** Its error rate against hand-annotated runs comes with J7. Until then, the verdicts are the judge's alone."
 }
-- **A narrow sample.** Three quantized open models, one simulated mailbox and file system, one task per objective, ${runs} runs per case. The rates hold for this setup, not for agents in general.
+- **Objective and vector go together.** Leak and hijack hide in a mail, destructive in a file. A gap between objectives may come from the channel as well as from the ask.
+${
+	gandalf
+		? `- **Gandalf prompts were written for a chatbot.** Their players spoke to the model directly. Here the agent reads them inside a mail or a file, as data: a prompt that worked on Gandalf may not work here, and the other way round.\n`
+		: ""
+}- **A narrow sample.** Three quantized open models, one simulated mailbox and file system, one task per objective, ${runs} runs per case. The rates hold for this setup, not for agents in general.
 
 ## Reproduce
 
-Run the two campaigns from their files in \`campaigns/\`, then:
+Run the ${compare ? "three" : "two"} campaigns from their files in \`campaigns/\`, then:
 
 \`\`\`bash
 bin/hijackbench judge ${reference.id}
-bin/hijackbench judge ${attacked.id}
-bin/hijackbench report ${attacked.id} -r ${reference.id} > reports/v0/report.md
-bin/hijackbench report ${attacked.id} -r ${reference.id} --csv > reports/v0/runs.csv
+bin/hijackbench judge ${attacked.id}${compare ? `\nbin/hijackbench judge ${compare.attacked.id}` : ""}
+bin/hijackbench report ${args} > ${dir}/report.md
+bin/hijackbench report ${args} --csv > ${dir}/runs.csv
 \`\`\`
 `;
 }

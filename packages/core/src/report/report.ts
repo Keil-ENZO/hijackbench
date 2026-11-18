@@ -12,7 +12,12 @@
 // Technical errors leave every rate. Unexposed runs leave the attack
 // rates, but stay in the utility: a task they failed is a task failed.
 
-import { ATTACKS, type Family, type Objective } from "../attacks/catalog.ts";
+import {
+	ATTACKS,
+	type Attack,
+	type Family,
+	type Objective,
+} from "../attacks/catalog.ts";
 import {
 	type CampaignConfig,
 	CampaignConfigSchema,
@@ -63,6 +68,15 @@ export type FamilyResult = {
 	success: Rate[];
 };
 
+// One attack of the campaign, over every model.
+export type AttackResult = {
+	attack: Attack;
+	success: Rate;
+};
+
+// Where the attacks of the campaign come from: AgentDojo, Gandalf.
+export type Source = Attack["source"];
+
 export type CampaignSummary = {
 	id: string;
 	name: string;
@@ -83,8 +97,14 @@ export type Report = {
 	models: string[];
 	// The tasks that host an attack, in task order.
 	hostTasks: TaskId[];
+	// The distinct attacks run, and where they come from, in catalog order.
+	attacks: number;
+	sources: Source[];
 	byModel: ModelResult[];
 	byFamily: FamilyResult[];
+	// The real texts that got through most often, Gandalf's: at most five,
+	// those that succeeded at least once.
+	topTexts: AttackResult[];
 	// The judge against hand annotations of the attacked campaign. Null
 	// until someone annotates it.
 	calibration: Calibration | null;
@@ -101,6 +121,9 @@ const FAMILIES: readonly Family[] = [
 	...new Set(ATTACKS.map((attack) => attack.family)),
 ];
 const attackOf = new Map(ATTACKS.map((attack) => [attack.id, attack]));
+
+// Texts cited in the report.
+const TOP_TEXTS = 5;
 
 const isError = (run: RunResult) => run.verdict === "technical_error";
 
@@ -227,12 +250,16 @@ export function buildReport(
 		};
 	});
 
+	// A family holds one AgentDojo case per objective, or 50 Gandalf texts:
+	// every case of the family counts.
 	const byFamily = FAMILIES.flatMap((family) =>
 		OBJECTIVES.flatMap((objective): FamilyResult[] => {
-			const attack = used.find(
-				(a) => a.family === family && a.objective === objective,
+			const ids = new Set(
+				used
+					.filter((a) => a.family === family && a.objective === objective)
+					.map((a) => a.id),
 			);
-			if (!attack) return [];
+			if (ids.size === 0) return [];
 			return [
 				{
 					family,
@@ -240,7 +267,7 @@ export function buildReport(
 					success: models.map((model) => {
 						const exposed = exposedOf(
 							attacked.results.filter(
-								(run) => run.model === model && run.attackId === attack.id,
+								(run) => run.model === model && ids.has(run.attackId ?? ""),
 							),
 						);
 						return rateOf(
@@ -253,14 +280,41 @@ export function buildReport(
 		}),
 	);
 
+	// Most successes first, then the highest rate, then catalog order.
+	const topTexts = used
+		.filter((attack) => attack.text !== undefined)
+		.map((attack): AttackResult => {
+			const exposed = exposedOf(
+				attacked.results.filter((run) => run.attackId === attack.id),
+			);
+			return {
+				attack,
+				success: rateOf(
+					exposed.filter((run) => attackSucceeded(run, attack.objective))
+						.length,
+					exposed.length,
+				),
+			};
+		})
+		.filter(({ success }) => success.count > 0)
+		.sort(
+			(a, b) =>
+				b.success.count - a.success.count ||
+				(b.success.rate ?? 0) - (a.success.rate ?? 0),
+		)
+		.slice(0, TOP_TEXTS);
+
 	return {
 		attacked: summarize(attacked),
 		reference: summarize(reference),
 		judgeVersion: JUDGE_VERSION,
 		models,
 		hostTasks,
+		attacks: used.length,
+		sources: [...new Set(used.map((attack) => attack.source))],
 		byModel,
 		byFamily,
+		topTexts,
 		calibration: calibrate(attacked.results),
 	};
 }
